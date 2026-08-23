@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SilentBridge - Acoustic Emergency Mesh</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="manifest" href="manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
+  <style>
+    body {
+      background-color: #000000;
+      color: #ffffff;
+      font-family: 'Inter', sans-serif;
+      background-image: 
+        linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .leaflet-tile-pane {
+      filter: grayscale(100%) invert(100%) contrast(150%) brightness(80%);
+    }
+    .leaflet-container {
+      background: #000000 !important;
+    }
+    .panic-glow {
+      box-shadow: 0 0 25px 0px rgba(255, 255, 255, 0.25);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-white selection:text-black">
+
+  <!-- Rescuer Authentication Modal -->
+  <div id="authModal" class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-black border border-white/40 p-6 rounded-xl max-w-sm w-full text-center shadow-2xl">
+      <div class="w-12 h-12 bg-neutral-900 border border-white/40 rounded-full flex items-center justify-center mx-auto mb-3 text-white text-xl font-bold">
+        🛡️
+      </div>
+      <h2 class="text-sm font-black text-white mb-1 tracking-wider uppercase">RESCUE HQ AUTHENTICATION</h2>
+      <p class="text-xs text-neutral-400 mb-4">Enter authorized credentials or set a custom security passcode.</p>
+      
+      <!-- Modal Tabs -->
+      <div class="flex border border-white/30 rounded-lg p-1 mb-3 bg-neutral-950 text-xs">
+        <button id="tabLogin" class="flex-1 py-1 rounded font-bold bg-white text-black transition">Enter Passcode</button>
+        <button id="tabCreate" class="flex-1 py-1 rounded font-bold text-neutral-400 hover:text-white transition">Create New</button>
+      </div>
+
+      <!-- Login Section -->
+      <div id="sectionLogin">
+        <input id="txtPin" type="password" placeholder="Passcode (Default: RESCUE2026)" class="w-full bg-neutral-900 border border-white/30 p-3 text-xs rounded-lg text-center font-bold font-mono tracking-widest text-white focus:outline-none focus:border-white mb-2">
+        <p id="authError" class="text-[11px] text-neutral-300 font-bold mb-3 hidden">Access Denied: Incorrect Passcode.</p>
+        <button id="btnUnlockHq" class="w-full bg-white hover:bg-neutral-200 text-black font-black py-2.5 rounded-lg tracking-widest text-xs uppercase transition">
+          UNLOCK RESCUE HQ
+        </button>
+      </div>
+
+      <!-- Create/Change Password Section -->
+      <div id="sectionCreate" class="hidden">
+        <input id="txtNewPin" type="password" placeholder="Enter New Passcode" class="w-full bg-neutral-900 border border-white/30 p-2.5 text-xs rounded-lg text-center font-bold font-mono text-white focus:outline-none focus:border-white mb-2">
+        <input id="txtConfirmPin" type="password" placeholder="Confirm New Passcode" class="w-full bg-neutral-900 border border-white/30 p-2.5 text-xs rounded-lg text-center font-bold font-mono text-white focus:outline-none focus:border-white mb-2">
+        <p id="createStatus" class="text-[11px] text-white font-bold mb-2 hidden"></p>
+        <button id="btnSavePassword" class="w-full bg-white hover:bg-neutral-200 text-black font-black py-2.5 rounded-lg tracking-widest text-xs uppercase transition">
+          SAVE & UNLOCK
+        </button>
+      </div>
+
+      <button id="btnCancelAuth" class="w-full text-neutral-500 hover:text-neutral-300 text-[11px] font-bold mt-3 py-1">
+        Cancel & Return to Sender
+      </button>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="bg-black border-b border-white/20 p-3.5 flex flex-wrap justify-between items-center gap-3">
+    <div class="flex items-center gap-2.5">
+      <span class="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
+      <div>
+        <h1 class="font-black tracking-widest text-white text-sm md:text-base">SILENTBRIDGE</h1>
+        <p class="text-[9px] text-neutral-400 tracking-wider">OFF-GRID ACOUSTIC RESCUE NETWORK</p>
+      </div>
+    </div>
+
+    <!-- Role Switcher -->
+    <div class="flex items-center bg-neutral-950 p-1 rounded-lg border border-white/20 text-xs">
+      <button id="btnRoleSender" class="px-3.5 py-1.5 rounded-md font-bold transition bg-white text-black shadow-sm">
+        🚨 SENDER (VICTIM)
+      </button>
+      <button id="btnRoleReceiver" class="px-3.5 py-1.5 rounded-md font-bold transition text-neutral-400 hover:text-white">
+        🛡️ RESCUER (HQ)
+      </button>
+    </div>
+
+    <span id="statusBadge" class="text-[11px] px-2.5 py-1 bg-neutral-900 border border-white/30 rounded-md text-white font-mono font-semibold tracking-wider">READY</span>
+  </header>
+
+  <!-- Live Audio Spectrum Visualizer -->
+  <div class="bg-black px-4 py-1.5 border-b border-white/20">
+    <canvas id="visualizer" width="600" height="28" class="w-full h-7 rounded bg-neutral-950 border border-white/10"></canvas>
+  </div>
+
+  <!-- Real-Time Notification Banners -->
+  <div class="max-w-7xl mx-auto w-full px-4 pt-4">
+    
+    <!-- ACK Banner (For Sender) -->
+    <div id="ackBanner" class="hidden bg-neutral-900 border-2 border-white rounded-xl p-3.5 flex items-start justify-between shadow-2xl transition-all duration-300">
+      <div class="flex items-start gap-3">
+        <div class="w-9 h-9 rounded-lg bg-white border border-black flex items-center justify-center text-black font-black text-lg flex-shrink-0">
+          ✓
+        </div>
+        <div>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="bg-white text-black text-[10px] font-black px-2 py-0.5 rounded tracking-wide">
+              ACK RECEIVED // HELP CONFIRMED
+            </span>
+            <span id="ackTime" class="text-xs text-white font-mono font-bold">--:--:--</span>
+          </div>
+          <p id="ackTitle" class="text-xs md:text-sm font-black text-white uppercase tracking-wide">
+            BASE STATION ACKNOWLEDGED DISTRESS BEACON! HELP IS EN ROUTE.
+          </p>
+          <p class="text-[11px] text-neutral-400 mt-0.5">
+            Stay in a safe location. Acoustic confirmation beacon received.
+          </p>
+        </div>
+      </div>
+      <button id="btnDismissAck" class="bg-neutral-800 hover:bg-neutral-700 border border-white/40 text-white text-xs px-3 py-1.5 rounded-md font-bold transition">
+        Dismiss
+      </button>
+    </div>
+
+    <!-- Alert Banner (For Receiver when SOS is Detected) -->
+    <div id="receiverAlertBanner" class="hidden bg-neutral-900 border-2 border-white rounded-xl p-3.5 flex items-start justify-between shadow-2xl transition-all duration-300">
+      <div class="flex items-start gap-3">
+        <div class="w-9 h-9 rounded-lg bg-white border border-black flex items-center justify-center text-black font-black text-lg flex-shrink-0 animate-pulse">
+          🚨
+        </div>
+        <div>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="bg-white text-black text-[10px] font-black px-2 py-0.5 rounded tracking-wide">
+              NEW DISTRESS BEACON DETECTED
+            </span>
+            <span id="sosTime" class="text-xs text-white font-mono font-bold">--:--:--</span>
+          </div>
+          <p id="sosTitle" class="text-xs md:text-sm font-black text-white uppercase tracking-wide">
+            INCOMING SOS RECEIVED FROM BEACON!
+          </p>
+          <p id="sosSubtitle" class="text-[11px] text-neutral-400 mt-0.5">
+            Target location plotted on tactical map. Review telemetry below.
+          </p>
+        </div>
+      </div>
+      <button id="btnDismissSos" class="bg-neutral-800 hover:bg-neutral-700 border border-white/40 text-white text-xs px-3 py-1.5 rounded-md font-bold transition">
+        Dismiss
+      </button>
+    </div>
+
+  </div>
+
+  <!-- Main Grid Container -->
+  <main class="flex-1 p-4 flex flex-col md:flex-row gap-4 w-full max-w-7xl mx-auto">
+    
+    <!-- SENDER PANEL -->
+    <div id="panelSender" class="w-full bg-neutral-950 border border-white/20 p-5 rounded-xl flex flex-col justify-between shadow-2xl transition-all duration-500">
+      <div>
+        <div class="flex justify-between items-center mb-3">
+          <h2 id="senderHeading" class="text-xs font-black text-white tracking-widest uppercase transition-colors">EMERGENCY DISTRESS BEACON</h2>
+          <span id="senderModeBadge" class="text-[9px] bg-neutral-900 text-neutral-300 border border-white/30 px-2 py-0.5 rounded font-bold uppercase tracking-wider transition-colors">TRANSMIT READY</span>
+        </div>
+
+        <!-- 1-TAP INSTANT PANIC BUTTON -->
+        <div class="mb-4 p-3.5 bg-neutral-900 border-2 border-white rounded-xl panic-glow">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[10px] font-black text-white tracking-wider flex items-center gap-1 font-mono">
+              <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
+              INSTANT PANIC TRANSMISSION
+            </span>
+            <span class="text-[9px] bg-white text-black px-2 py-0.5 rounded font-bold">1-TAP DISPATCH</span>
+          </div>
+          <button id="btnInstantPanic" class="w-full bg-white hover:bg-neutral-200 text-black font-black py-4 px-4 rounded-lg text-sm md:text-base tracking-widest shadow-xl flex items-center justify-center gap-2 uppercase transition-all duration-200 active:scale-95">
+            <span>🚨</span> TRANSMIT IMMEDIATE EMERGENCY GPS
+          </button>
+          <p class="text-[10px] text-neutral-400 text-center mt-2 font-medium">
+            Instantly broadcasts live satellite GPS to search & rescue teams.
+          </p>
+        </div>
+
+        <!-- SURVIVOR NAME INPUT -->
+        <div class="mb-3">
+          <label class="text-[10px] text-neutral-400 font-black tracking-wider uppercase font-mono">SURVIVOR NAME / IDENTITY</label>
+          <input id="txtName" type="text" maxlength="25" placeholder="Enter your full name (e.g. Charan Are)" class="w-full bg-neutral-900 border border-white/20 p-2.5 text-xs rounded-lg mt-1 text-white placeholder:text-neutral-600 focus:outline-none focus:border-white transition">
+        </div>
+        
+        <!-- Category Buttons -->
+        <div class="grid grid-cols-2 gap-2.5 mb-3">
+          <button data-type="1" class="type-btn ring-2 ring-white p-3 bg-neutral-900 border border-white/40 text-left rounded-lg transition hover:bg-neutral-800">
+            <span class="text-lg">🚑</span> <span class="font-bold ml-1.5 text-xs text-white">Medical</span>
+          </button>
+          <button data-type="2" class="type-btn p-3 bg-neutral-950 border border-white/20 text-left rounded-lg transition hover:bg-neutral-800">
+            <span class="text-lg">🧱</span> <span class="font-bold ml-1.5 text-xs text-neutral-300">Trapped</span>
+          </button>
+          <button data-type="3" class="type-btn p-3 bg-neutral-950 border border-white/20 text-left rounded-lg transition hover:bg-neutral-800">
+            <span class="text-lg">🔥</span> <span class="font-bold ml-1.5 text-xs text-neutral-300">Fire</span>
+          </button>
+          <button data-type="4" class="type-btn p-3 bg-neutral-950 border border-white/20 text-left rounded-lg transition hover:bg-neutral-800">
+            <span class="text-lg">🌊</span> <span class="font-bold ml-1.5 text-xs text-neutral-300">Flood</span>
+          </button>
+        </div>
+
+        <!-- Voice Recording Module -->
+        <div id="voiceModuleBox" class="mb-3 bg-neutral-900 p-3 rounded-lg border border-white/20 transition-colors">
+          <div class="flex justify-between items-center mb-2">
+            <label class="text-[10px] font-black text-neutral-400 tracking-wider uppercase font-mono">VICTIM AUDIO RECORDING</label>
+            <span id="recordTimer" class="text-xs font-mono text-white font-bold">00:00</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="btnRecordVoice" class="bg-white hover:bg-neutral-200 text-black text-xs font-bold py-2 px-3 rounded-md flex items-center gap-1.5 transition">
+              🎙️ Hold/Tap to Record Voice
+            </button>
+            <audio id="audioPreview" controls class="h-8 flex-1 hidden rounded"></audio>
+          </div>
+          <p id="recordStatus" class="text-[10px] text-neutral-500 mt-1.5">Record a 5-second situational voice clip.</p>
+        </div>
+
+        <!-- Short Note Input -->
+        <div class="mb-3">
+          <label class="text-[10px] text-neutral-400 font-black tracking-wider uppercase font-mono">TACTICAL NOTE (MAX 17 CHARS)</label>
+          <input id="txtMessage" type="text" maxlength="17" placeholder="e.g. 2 ppl, Room 302" class="w-full bg-neutral-900 border border-white/20 p-2.5 text-xs rounded-lg mt-1 text-white placeholder:text-neutral-600 focus:outline-none focus:border-white transition">
+        </div>
+
+        <!-- GPS Status Box -->
+        <div id="gpsBox" class="mb-3 p-3 bg-neutral-900 rounded-lg border border-white/20 transition-colors font-mono">
+          <div class="flex justify-between items-center mb-1 text-xs">
+            <span class="text-neutral-400">GPS: <span id="gpsCoords" class="text-white font-bold">Acquiring satellites...</span></span>
+            <button id="btnGps" class="bg-neutral-800 hover:bg-neutral-700 text-white border border-white/30 px-2.5 py-1 rounded text-[10px] font-bold transition">🎯 Recalibrate</button>
+          </div>
+          <div class="text-[10px] text-neutral-500 flex justify-between">
+            <span id="gpsAccuracy">Accuracy: Searching...</span>
+            <span id="gpsTimestamp">Last synced: --:--:--</span>
+          </div>
+        </div>
+
+        <!-- Positive ACK Box -->
+        <div id="senderAckMessage" class="hidden mb-3 p-3.5 bg-neutral-900 border-2 border-white rounded-lg text-white">
+          <div class="flex items-center gap-2 font-bold text-xs">
+            <span>✓</span> <span id="senderAckTitle">RESCUE CONFIRMED BY HQ</span>
+          </div>
+          <p class="text-[11px] text-neutral-400 mt-1">
+            Your emergency beacon and location were received and dispatched. Help is on the way.
+          </p>
+        </div>
+      </div>
+
+      <button id="btnSend" class="w-full bg-neutral-900 hover:bg-neutral-800 border border-white/30 text-white font-bold py-3 rounded-lg text-xs uppercase tracking-wider transition">
+        📢 BROADCAST WITH NOTE / AUDIO
+      </button>
+    </div>
+
+    <!-- RECEIVER PANEL -->
+    <div id="panelReceiver" class="w-full flex flex-col gap-4 hidden">
+      <div id="map" class="h-64 rounded-xl border border-white/30 shadow-xl overflow-hidden"></div>
+      <div class="flex-1 bg-neutral-950 border border-white/20 p-4 rounded-xl flex flex-col min-h-[260px] shadow-2xl">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="text-xs font-black text-white tracking-widest uppercase font-mono">LIVE INCIDENT & RESCUE FEED</h2>
+          <span class="text-[9px] bg-neutral-900 text-white border border-white/30 px-2 py-0.5 rounded font-bold uppercase tracking-wider font-mono">ACTIVE SCANNER</span>
+        </div>
+        <div id="feed" class="flex-1 overflow-y-auto space-y-2.5 max-h-64 pr-1"></div>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="crc16.js"></script>
+  <script src="packetEngine.js"></script>
+  <script src="audioModem.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
