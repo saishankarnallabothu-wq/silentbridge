@@ -36,7 +36,8 @@ silentbridge/
 ├── packetEngine.js   # 64-bit float binary packet serializer and decoder
 ├── crc16.js          # CRC-16 error checking engine
 ├── server.js         # Local Node.js WebSocket mesh bridge server
-└── package.json      # Node.js dependencies and scripts
+├── package.json      # Node.js dependencies and scripts
+└── vercel.json       # Static Vercel deployment configuration
 ```
 
 ## Vercel Deployment
