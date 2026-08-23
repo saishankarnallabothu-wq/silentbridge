@@ -87,7 +87,8 @@ document.addEventListener("DOMContentLoaded", () => {
   let socket = null;
 
   function connectWebSocket() {
-    const configuredWsUrl = window.SILENTBRIDGE_WS_URL;
+    const relayFromUrl = new URLSearchParams(window.location.search).get('relay');
+    const configuredWsUrl = relayFromUrl || window.SILENTBRIDGE_WS_URL;
     const hostname = window.location.hostname;
     const isLocalRelayHost = hostname === 'localhost'
       || hostname === '127.0.0.1'
@@ -104,35 +105,35 @@ document.addEventListener("DOMContentLoaded", () => {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = configuredWsUrl || `${wsProtocol}//${window.location.host}`;
 
-  console.log("Connecting to WebSocket:", wsUrl);
+    console.log("Connecting to WebSocket:", wsUrl);
 
-  socket = new WebSocket(wsUrl);
+    socket = new WebSocket(wsUrl);
 
-  socket.onopen = () => {
-    console.log("✅ WebSocket connected:", wsUrl);
-  };
+    socket.onopen = () => {
+      console.log("✅ WebSocket connected:", wsUrl);
+    };
 
-  socket.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
 
-      if (data) {
-        handleReceivedPacket(data);
+        if (data) {
+          handleReceivedPacket(data);
+        }
+      } catch (err) {
+        console.warn("Socket packet parse error:", err);
       }
-    } catch (err) {
-      console.warn("Socket packet parse error:", err);
-    }
-  };
+    };
 
-  socket.onerror = (err) => {
-    console.warn("WebSocket error:", err);
-  };
+    socket.onerror = (err) => {
+      console.warn("WebSocket error:", err);
+    };
 
-  socket.onclose = () => {
-    console.warn("WebSocket closed. Retrying...");
-    setTimeout(connectWebSocket, 2000);
-  };
-}
+    socket.onclose = () => {
+      console.warn("WebSocket closed. Retrying...");
+      setTimeout(connectWebSocket, 2000);
+    };
+  }
 
 connectWebSocket();
 

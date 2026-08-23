@@ -42,6 +42,13 @@ silentbridge/
 
 ## Vercel Deployment
 
-The frontend can be deployed to Vercel as a static site from the repository root. No build command or output directory is required. `server.js` should continue to run locally or on a separate Node.js host because Vercel does not provide a persistent WebSocket server for this relay.
+The frontend can be deployed to Vercel as a static site from the repository root. No build command or output directory is required. `server.js` must run on a separate WebSocket-capable Node.js host because Vercel does not provide a persistent WebSocket server for this relay.
 
-On Vercel, acoustic communication and same-browser `BroadcastChannel` synchronization continue to work. To restore cross-device WebSocket synchronization, define `window.SILENTBRIDGE_WS_URL` before `app.js` loads with the secure WebSocket URL of an external relay, for example `wss://relay.example.com`.
+To enable cross-device synchronization:
+
+1. Create a Web Service on Render, Railway, or Fly.io using this repository.
+2. Set its build command to `npm install` and start command to `npm start`.
+3. Copy its public HTTPS hostname and use the `wss://` version as the relay URL.
+4. Open the Vercel app with the relay query parameter, for example `https://your-app.vercel.app/?relay=wss%3A%2F%2Fyour-relay.onrender.com`.
+
+The acoustic and same-browser `BroadcastChannel` features work without the relay. Do not use `https://` in the `relay` value; WebSockets require `wss://` for deployed HTTPS pages.
