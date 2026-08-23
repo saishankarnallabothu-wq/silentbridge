@@ -83,18 +83,26 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Mesh & WebSocket Synchronization
-  // Mesh & WebSocket Synchronization
-const meshChannel = new BroadcastChannel("silentbridge_mesh");
-let socket = null;
+  const meshChannel = new BroadcastChannel("silentbridge_mesh");
+  let socket = null;
 
-function connectWebSocket() {
-  const wsProtocol =
-    window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  function connectWebSocket() {
+    const configuredWsUrl = window.SILENTBRIDGE_WS_URL;
+    const hostname = window.location.hostname;
+    const isLocalRelayHost = hostname === 'localhost'
+      || hostname === '127.0.0.1'
+      || hostname === '::1'
+      || hostname.endsWith('.local')
+      || /^10\.|^192\.168\.|^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname);
 
-  // Do NOT force port 3000 on Vercel
-  const wsHost = window.location.host;
+    // Vercel serves the frontend, but cannot host this persistent WebSocket relay.
+    if (!configuredWsUrl && !isLocalRelayHost) {
+      console.info("WebSocket relay disabled; acoustic mesh remains available.");
+      return;
+    }
 
-  const wsUrl = `${wsProtocol}//${wsHost}`;
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = configuredWsUrl || `${wsProtocol}//${window.location.host}`;
 
   console.log("Connecting to WebSocket:", wsUrl);
 

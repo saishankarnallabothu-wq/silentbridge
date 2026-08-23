@@ -36,5 +36,11 @@ silentbridge/
 ├── packetEngine.js   # 64-bit float binary packet serializer and decoder
 ├── crc16.js          # CRC-16 error checking engine
 ├── server.js         # Local Node.js WebSocket mesh bridge server
-├── package.json      # Node.js dependencies and scripts
-└── vercel.json       # Vercel deployment configuration
+└── package.json      # Node.js dependencies and scripts
+```
+
+## Vercel Deployment
+
+The frontend can be deployed to Vercel as a static site from the repository root. No build command or output directory is required. `server.js` should continue to run locally or on a separate Node.js host because Vercel does not provide a persistent WebSocket server for this relay.
+
+On Vercel, acoustic communication and same-browser `BroadcastChannel` synchronization continue to work. To restore cross-device WebSocket synchronization, define `window.SILENTBRIDGE_WS_URL` before `app.js` loads with the secure WebSocket URL of an external relay, for example `wss://relay.example.com`.
