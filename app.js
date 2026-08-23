@@ -83,27 +83,50 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Mesh & WebSocket Synchronization
-  const meshChannel = new BroadcastChannel("silentbridge_mesh");
-  let socket = null;
+  // Mesh & WebSocket Synchronization
+const meshChannel = new BroadcastChannel("silentbridge_mesh");
+let socket = null;
 
-  function connectWebSocket() {
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = window.location.hostname || 'localhost';
-    const wsPort = window.location.port || '3000';
-    const wsUrl = `${wsProtocol}//${wsHost}:${wsPort}`;
+function connectWebSocket() {
+  const wsProtocol =
+    window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
-    socket = new WebSocket(wsUrl);
-    socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data) handleReceivedPacket(data);
-      } catch (err) {
-        console.warn("Socket packet parse error:", err);
+  // Do NOT force port 3000 on Vercel
+  const wsHost = window.location.host;
+
+  const wsUrl = `${wsProtocol}//${wsHost}`;
+
+  console.log("Connecting to WebSocket:", wsUrl);
+
+  socket = new WebSocket(wsUrl);
+
+  socket.onopen = () => {
+    console.log("✅ WebSocket connected:", wsUrl);
+  };
+
+  socket.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+
+      if (data) {
+        handleReceivedPacket(data);
       }
-    };
-    socket.onclose = () => setTimeout(connectWebSocket, 2000);
-  }
-  connectWebSocket();
+    } catch (err) {
+      console.warn("Socket packet parse error:", err);
+    }
+  };
+
+  socket.onerror = (err) => {
+    console.warn("WebSocket error:", err);
+  };
+
+  socket.onclose = () => {
+    console.warn("WebSocket closed. Retrying...");
+    setTimeout(connectWebSocket, 2000);
+  };
+}
+
+connectWebSocket();
 
   meshChannel.onmessage = (event) => {
     if (event.data) handleReceivedPacket(event.data);
