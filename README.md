@@ -1,28 +1,30 @@
 # 🌉 SilentBridge
 
-> **Off-Grid Acoustic Emergency Mesh Network**  
-> An emergency communication system designed to transmit critical SOS beacons, exact GPS telemetry, situational voice recordings, and responder acknowledgments—operating entirely over physical audio frequencies (near-ultrasound) and decentralized WebRTC/WebSocket fallback relays when cellular infrastructure fails.
+> **Off-Grid Acoustic & Cloud Mesh Emergency Rescue Network**  
+> An emergency communication system designed to transmit critical SOS beacons, exact GPS telemetry, situational voice recordings, and responder acknowledgments across devices—operating over physical audio frequencies (near-ultrasound FSK), decentralized Cloud Mesh relays (WSS), and optional local WebSocket/BroadcastChannel meshes when cellular infrastructure fails.
 
 ---
 
 ## 🚀 Key Features
 
-* **🔊 Near-Ultrasound Acoustic PHY:** Modulates data packets using FSK (Frequency-Shift Keying) across audio frequencies to communicate device-to-device through standard phone speakers and microphones without cellular or Wi-Fi data.
-* **🛰️ High-Precision Satellite GPS:** Captures exact physical coordinates with 64-bit double precision (`Float64`) and displays precision routing for disaster response units.
-* **🚨 1-Tap Emergency Panic Dispatch:** Instant broadcast trigger that locks live satellite GPS coordinates and alerts nearby rescue hubs immediately.
+* **🌐 Zero-Config Cross-Device Cloud Mesh:** Works out of the box on static hosts (e.g. Vercel, GitHub Pages) without needing a backend server, utilizing multi-broker Secure WebSockets (EMQX & HiveMQ failover).
+* **🔊 Near-Ultrasound & Tactical Acoustic PHY:** Modulates data packets across audio frequencies with real-time spectrum visualization on phone and laptop speakers/microphones.
+* **🛰️ High-Precision Satellite GPS with Fallback:** Captures exact physical coordinates with 64-bit double precision (`Float64`) and displays precision routing for disaster response units.
+* **🚨 1-Tap Emergency Panic Dispatch:** Instant broadcast trigger that locks live satellite GPS coordinates and alerts nearby rescue hubs immediately with auto-retransmit until ACK is received.
 * **🎙️ Embedded Survivor Voice Memos:** Records and transmits situational voice notes alongside distress telemetry.
-* **🛡️ Secure Rescuer Command HQ:** Dedicated responder portal protected by passcode authentication, featuring a dark-mode tactical map (Leaflet.js), incident feeds, turn-by-turn routing, and two-way ACK confirmations.
-* **✅ Verified Rescue Confirmation (ACK):** Sends acoustic/mesh acknowledgement packets back to survivors, visually confirming rescue deployment on the sender's device.
+* **🛡️ Secure Rescuer Command HQ:** Dedicated responder portal protected by passcode authentication (Default: `RESCUE2026`), featuring a dark-mode tactical map (Leaflet.js), incident feeds, turn-by-turn routing, and two-way ACK confirmations.
+* **✅ Verified Rescue Confirmation (ACK):** Sends acknowledgement packets back to survivors, visually confirming rescue deployment on the sender's device with green status and haptic feedback.
+* **📡 Room / Network Channel Pairing:** Pair devices instantly using room codes (e.g. `#GLOBAL` or `?room=TEAM-1`) with 1-click shareable pairing links and test ping diagnostics.
 
 ---
 
 ## 🛠️ Tech Stack
 
 * **Frontend:** HTML5, Modern CSS / Tailwind CSS, JavaScript (Vanilla ES6+)
+* **Mesh Network Bridge:** Multi-Transport WSS MQTT (EMQX / HiveMQ), Local WebSocket, BroadcastChannel API
 * **Mapping Engine:** Leaflet.js, OpenStreetMap
 * **Audio Layer:** Web Audio API (`AudioContext`, `OscillatorNode`, `AnalyserNode`)
 * **Transport Protocol:** Custom 40-byte Binary Packet Engine + CRC-16 Checksum
-* **Network Synchronization:** WebSockets & BroadcastChannel API
 
 ---
 
@@ -30,25 +32,37 @@
 
 ```text
 silentbridge/
-├── index.html        # Main tactical dashboard UI
+├── index.html        # Main tactical dashboard UI & Pairing Modal
 ├── app.js            # Main application logic, GPS resolver, and UI controls
-├── audioModem.js     # Web Audio API acoustic transmitter and receiver
+├── meshBridge.js     # Multi-transport cross-device mesh relay engine
+├── paho-mqtt.js      # Eclipse Paho MQTT client over Secure WebSockets (WSS)
+├── audioModem.js     # Web Audio API acoustic transmitter and spectrum visualizer
 ├── packetEngine.js   # 64-bit float binary packet serializer and decoder
-├── crc16.js          # CRC-16 error checking engine
-├── server.js         # Local Node.js WebSocket mesh bridge server
+├── crc16.js          # CCITT CRC-16 error checking engine
+├── server.js         # Optional local/hosted Node.js WebSocket bridge server
 ├── package.json      # Node.js dependencies and scripts
+├── sw.js             # PWA Service Worker offline cache
 └── vercel.json       # Static Vercel deployment configuration
 ```
 
-## Vercel Deployment
+---
 
-The frontend can be deployed to Vercel as a static site from the repository root. No build command or output directory is required. `server.js` must run on a separate WebSocket-capable Node.js host because Vercel does not provide a persistent WebSocket server for this relay.
+## 📱 Cross-Device Usage (Phone & Laptop)
 
-To enable cross-device synchronization:
+### Deployed on Vercel / Cloud
+1. Open the deployed URL on **Device 1** (e.g., Phone): Select **🚨 SENDER (VICTIM)**.
+2. Open the deployed URL on **Device 2** (e.g., Laptop): Select **🛡️ RESCUER (HQ)**.
+   * Rescuer Default Passcode: `RESCUE2026` (or set a custom passcode).
+3. Both devices automatically connect to the `#GLOBAL` room mesh channel over Secure WebSockets (`wss://`).
+   * To use a private team channel, tap the **MESH: ONLINE** badge in the header, enter your room code (e.g., `ALPHA-1`), and click **Apply** or copy the pairing link.
+4. On Phone (Sender), tap **🚨 TRANSMIT IMMEDIATE EMERGENCY GPS** or record a voice memo and broadcast.
+5. On Laptop (Rescuer), the wailing alert siren sounds, the emergency incident card appears with the survivor's exact GPS marker on the map, and the voice memo can be played.
+6. Click **SEND RESCUE ACK ➔** on the laptop: the phone immediately turns green with **✓ SOS ACKNOWLEDGED & CONFIRMED** and vibrates!
 
-1. Create a Web Service on Render, Railway, or Fly.io using this repository.
-2. Set its build command to `npm install` and start command to `npm start`.
-3. Copy its public HTTPS hostname and use the `wss://` version as the relay URL.
-4. Open the Vercel app with the relay query parameter, for example `https://your-app.vercel.app/?relay=wss%3A%2F%2Fyour-relay.onrender.com`.
-
-The acoustic and same-browser `BroadcastChannel` features work without the relay. Do not use `https://` in the `relay` value; WebSockets require `wss://` for deployed HTTPS pages.
+### Local Testing (Offline LAN / Same Network)
+You can optionally run the local Node.js server:
+```bash
+npm start
+```
+* On Laptop: `http://localhost:3000`
+* On Phone: `http://<YOUR-LAPTOP-IP>:3000`

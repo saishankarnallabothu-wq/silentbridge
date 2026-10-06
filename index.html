@@ -77,13 +77,98 @@
     </div>
   </div>
 
+  <!-- Network Mesh & Device Pairing Modal -->
+  <div id="meshModal" class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-black border border-white/40 p-6 rounded-xl max-w-md w-full shadow-2xl font-mono text-xs">
+      <div class="flex justify-between items-center mb-3 border-b border-white/20 pb-2">
+        <div class="flex items-center gap-2">
+          <span class="text-lg">📡</span>
+          <h2 class="text-xs font-black text-white tracking-widest uppercase">CROSS-DEVICE MESH SYNC</h2>
+        </div>
+        <button id="btnCloseMeshModal" class="text-neutral-400 hover:text-white text-sm font-bold px-1.5 py-0.5">✕</button>
+      </div>
+
+      <p class="text-[11px] text-neutral-300 mb-3 font-sans">
+        SilentBridge synchronizes Sender and Rescue HQ devices across any network via encrypted Cloud Mesh and physical acoustic frequencies.
+      </p>
+
+      <!-- Active Connection Telemetry -->
+      <div class="bg-neutral-900 p-3 rounded-lg border border-white/20 mb-3 space-y-1.5 text-[11px]">
+        <div class="flex justify-between">
+          <span class="text-neutral-400">Cloud Mesh Relay:</span>
+          <span id="diagCloudStatus" class="text-emerald-400 font-bold">● CONNECTED (EMQX)</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-neutral-400">Active Room Channel:</span>
+          <span id="diagRoom" class="text-white font-bold">#GLOBAL</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-neutral-400">Detected Mesh Peers:</span>
+          <span id="diagPeers" class="text-emerald-400 font-bold">0 peers</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-neutral-400">This Device Role:</span>
+          <span id="diagRole" class="text-white font-bold">SENDER</span>
+        </div>
+      </div>
+
+      <!-- Room Channel Configuration -->
+      <div class="mb-3">
+        <label class="block text-[10px] text-neutral-400 font-black tracking-wider uppercase mb-1">
+          ROOM / CHANNEL CODE (MATCH ON BOTH DEVICES)
+        </label>
+        <div class="flex gap-2">
+          <input id="txtRoomCode" type="text" maxlength="15" placeholder="e.g. GLOBAL or TEAM-1" class="flex-1 bg-neutral-900 border border-white/30 p-2 rounded text-white font-bold uppercase tracking-wider focus:outline-none focus:border-white">
+          <button id="btnApplyRoom" class="bg-white hover:bg-neutral-200 text-black font-black px-3 rounded uppercase transition">
+            Apply
+          </button>
+        </div>
+        <p class="text-[10px] text-neutral-500 mt-1">Both devices must have the same Room Code to sync together.</p>
+      </div>
+
+      <!-- Quick Pair Link -->
+      <div class="mb-3">
+        <label class="block text-[10px] text-neutral-400 font-black tracking-wider uppercase mb-1">
+          PAIRING LINK FOR OTHER DEVICE
+        </label>
+        <div class="flex gap-2">
+          <input id="txtShareLink" type="text" readonly class="flex-1 bg-neutral-950 border border-white/20 p-2 rounded text-[10px] text-neutral-300 font-mono select-all">
+          <button id="btnCopyPairLink" class="bg-neutral-800 hover:bg-neutral-700 text-white border border-white/30 font-bold px-3 rounded text-[10px] transition">
+            📋 Copy Link
+          </button>
+        </div>
+        <p id="copyFeedback" class="text-[10px] text-emerald-400 mt-1 hidden">✓ Link copied to clipboard! Open this URL on your second device.</p>
+      </div>
+
+      <!-- Signal Ping Verification -->
+      <div class="mb-4 pt-2 border-t border-white/20 flex gap-2">
+        <button id="btnTestSignal" class="flex-1 bg-neutral-800 hover:bg-neutral-700 border border-white/40 text-white font-bold py-2 rounded text-[11px] uppercase transition flex items-center justify-center gap-1.5">
+          <span>📶</span> Send Test Ping to HQ / Sender
+        </button>
+      </div>
+
+      <!-- Acoustic Sound Mode -->
+      <div class="pt-2 border-t border-white/20">
+        <label class="block text-[10px] text-neutral-400 font-black tracking-wider uppercase mb-1">
+          ACOUSTIC TRANSMITTER AUDIO MODE
+        </label>
+        <select id="selAudioMode" class="w-full bg-neutral-900 border border-white/30 p-2 rounded text-xs text-white focus:outline-none">
+          <option value="audible">🔊 Tactical Emergency Chirps (Audible FSK)</option>
+          <option value="ultrasound">🔇 Near-Ultrasound (18.5kHz Silent)</option>
+          <option value="silent">🔕 Mute Audio Transmitter</option>
+        </select>
+      </div>
+
+    </div>
+  </div>
+
   <!-- Header -->
   <header class="bg-black border-b border-white/20 p-3.5 flex flex-wrap justify-between items-center gap-3">
     <div class="flex items-center gap-2.5">
-      <span class="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
+      <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
       <div>
         <h1 class="font-black tracking-widest text-white text-sm md:text-base">SILENTBRIDGE</h1>
-        <p class="text-[9px] text-neutral-400 tracking-wider">OFF-GRID ACOUSTIC RESCUE NETWORK</p>
+        <p class="text-[9px] text-neutral-400 tracking-wider">OFF-GRID ACOUSTIC & CLOUD MESH RESCUE</p>
       </div>
     </div>
 
@@ -97,7 +182,17 @@
       </button>
     </div>
 
-    <span id="statusBadge" class="text-[11px] px-2.5 py-1 bg-neutral-900 border border-white/30 rounded-md text-white font-mono font-semibold tracking-wider">READY</span>
+    <!-- Mesh Sync & Status Badges -->
+    <div class="flex items-center gap-2">
+      <button id="btnOpenMeshModal" class="flex items-center gap-1.5 bg-neutral-950 hover:bg-neutral-900 border border-white/30 px-2.5 py-1 rounded-md text-xs font-mono transition" title="Network Mesh Settings & Device Pairing">
+        <span id="meshStatusDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="meshStatusText" class="text-emerald-400 font-bold text-[10px]">MESH: ONLINE</span>
+        <span class="text-neutral-500">|</span>
+        <span id="roomBadge" class="text-white font-bold text-[10px]">#GLOBAL</span>
+        <span class="text-neutral-400 text-[10px]">⚙️</span>
+      </button>
+      <span id="statusBadge" class="text-[11px] px-2.5 py-1 bg-neutral-900 border border-white/30 rounded-md text-white font-mono font-semibold tracking-wider">READY</span>
+    </div>
   </header>
 
   <!-- Live Audio Spectrum Visualizer -->
@@ -107,6 +202,26 @@
 
   <!-- Real-Time Notification Banners -->
   <div class="max-w-7xl mx-auto w-full px-4 pt-4">
+
+    <!-- Test Ping Banner -->
+    <div id="testPingBanner" class="hidden bg-neutral-900 border-2 border-emerald-400 rounded-xl p-3.5 flex items-start justify-between shadow-2xl transition-all duration-300 mb-3">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-emerald-400 text-black font-black flex items-center justify-center text-sm flex-shrink-0">
+          📡
+        </div>
+        <div>
+          <p id="testPingTitle" class="text-xs font-black text-emerald-200 uppercase tracking-wide">
+            TEST PING RECEIVED // TWO-WAY MESH VERIFIED
+          </p>
+          <p id="testPingSubtitle" class="text-[11px] text-neutral-300 mt-0.5">
+            Cloud mesh relay communication between devices is synchronized.
+          </p>
+        </div>
+      </div>
+      <button id="btnDismissTestPing" class="bg-neutral-800 hover:bg-neutral-700 text-emerald-300 border border-emerald-500/50 text-[10px] px-2.5 py-1 rounded font-bold">
+        Dismiss
+      </button>
+    </div>
     
     <!-- ACK Banner (For Sender) -->
     <div id="ackBanner" class="hidden bg-neutral-900 border-2 border-white rounded-xl p-3.5 flex items-start justify-between shadow-2xl transition-all duration-300">
@@ -245,6 +360,25 @@
           </div>
         </div>
 
+        <!-- Active Beacon Retrying Box -->
+        <div id="senderActiveBeaconBox" class="hidden mb-3 p-3 bg-neutral-900 border border-amber-400/80 rounded-lg text-white">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-black text-amber-300 tracking-wider flex items-center gap-1 font-mono">
+              <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+              BEACON BROADCASTING // AWAITING HQ ACK
+            </span>
+            <span id="beaconRetryCount" class="text-[9px] bg-amber-400 text-black px-1.5 py-0.5 rounded font-bold font-mono">ATTEMPT 1</span>
+          </div>
+          <p class="text-[10px] text-neutral-300 mt-1">
+            Distress signal broadcasting over cloud mesh and acoustic frequencies. Retrying automatically until base station confirms.
+          </p>
+          <div class="flex justify-end mt-2">
+            <button id="btnCancelBeacon" class="text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-white/20 px-2.5 py-1 rounded font-bold">
+              Stand Down / Cancel Beacon
+            </button>
+          </div>
+        </div>
+
         <!-- Positive ACK Box -->
         <div id="senderAckMessage" class="hidden mb-3 p-3.5 bg-neutral-900 border-2 border-white rounded-lg text-white">
           <div class="flex items-center gap-2 font-bold text-xs">
@@ -277,6 +411,8 @@
 
   <script src="crc16.js"></script>
   <script src="packetEngine.js"></script>
+  <script src="paho-mqtt.js"></script>
+  <script src="meshBridge.js"></script>
   <script src="audioModem.js"></script>
   <script src="app.js"></script>
 </body>
