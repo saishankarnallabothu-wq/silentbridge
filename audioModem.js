@@ -25,7 +25,7 @@ class AudioModem {
     this.SYNC_FREQ = 2700;
     this.DATA_FREQS = [1300, 1650, 2000, 2350]; // 350 Hz tone spacing for maximum noise immunity
     this.END_FREQ = 950;
-    this.SYMBOL_MS = 65; // 65ms per 2-bit symbol
+    this.SYMBOL_MS = 80; // 80ms per 2-bit symbol with integrated energy matched filtering
   }
 
   setSoundMode(mode) {
@@ -220,8 +220,8 @@ class AudioModem {
         gain.connect(ctx.destination);
 
         const pilotDur = 0.12;  // 120ms pilot lead-in
-        const syncDur = 0.12;   // 120ms sync tone
-        const symbolDur = this.SYMBOL_MS / 1000; // 0.065s per 2-bit symbol
+        const syncDur = 0.15;   // 150ms sync tone
+        const symbolDur = this.SYMBOL_MS / 1000; // 0.080s per 2-bit symbol
         const endDur = 0.10;
 
         let t = now;
@@ -267,15 +267,17 @@ class AudioModem {
     this.onStatusChange(this.isListening ? "LISTENING" : "READY");
   }
 
-  // Real-Time 4-FSK Acoustic Demodulator (Microphone Receiver)
+  // Real-Time 4-FSK Acoustic Demodulator with Integrating Energy Matched Filter
   startDemodulator() {
     if (this.demodInterval) clearInterval(this.demodInterval);
 
     let rxState = 'IDLE'; // IDLE, WAIT_SYNC_END, DATA
+    let syncCounter = 0;
+    let syncDetectTime = 0;
     let rxSymbols = [];
     let expectedSymbols = 56;
-    let nextSampleTime = 0;
-    let syncDetectTime = 0;
+    let symbolStartTime = 0;
+    let energyAccumulators = [0, 0, 0, 0];
 
     const FFT_SIZE = 2048;
 
@@ -299,55 +301,67 @@ class AudioModem {
         );
       };
 
-      // Measure ambient noise floor around data band (bins 40 to 120)
+      // Measure ambient noise floor away from sync/data band (bins 20-35 and 130-150)
       let noiseSum = 0;
-      for (let b = 40; b < 120; b += 5) noiseSum += freqData[b];
-      const noiseFloor = noiseSum / 16;
+      for (let b = 20; b <= 35; b += 3) noiseSum += freqData[b];
+      for (let b = 130; b <= 145; b += 3) noiseSum += freqData[b];
+      const noiseFloor = noiseSum / 12;
 
       const now = performance.now();
       const syncEnergy = getEnergy(this.SYNC_FREQ);
 
       if (rxState === 'IDLE') {
         this.currentRxState = 'LISTENING';
-        // Detect 2700 Hz Sync Tone clearly above ambient noise floor
-        if (syncEnergy > Math.max(22, noiseFloor + 10)) {
-          rxState = 'WAIT_SYNC_END';
-          syncDetectTime = now;
+        // 2-tick confirmation guarantees lock onto true 150ms 2700Hz sync tone, rejecting noise spikes
+        if (syncEnergy > Math.max(18, noiseFloor + 8)) {
+          syncCounter++;
+          if (syncCounter >= 2) {
+            rxState = 'WAIT_SYNC_END';
+            syncDetectTime = now;
+          }
+        } else {
+          syncCounter = 0;
         }
       } else if (rxState === 'WAIT_SYNC_END') {
-        // Wait until sync tone ends (or max 125ms from initial sync lock)
-        const syncEnded = (syncEnergy < Math.max(16, noiseFloor + 7)) || (now - syncDetectTime > 125);
+        // Sync tone ends: sync frequency energy drops OR max sync duration reached
+        const syncEnded = (syncEnergy < Math.max(14, noiseFloor + 6)) || (now - syncDetectTime > 160);
 
         if (syncEnded) {
-          // Sync tone has ended: data transmission begins NOW!
           rxState = 'DATA';
           this.currentRxState = 'RECEIVING';
           rxSymbols = [];
-          expectedSymbols = 56; // default to 14-byte SOS beacon
-          nextSampleTime = now + (this.SYMBOL_MS / 2); // sample right in center of symbol 0
-          console.log("🔊 Acoustic sync locked! Receiving data symbols...");
+          expectedSymbols = 56;
+          symbolStartTime = now;
+          energyAccumulators = [0, 0, 0, 0];
+          console.log("🔊 Acoustic sync locked! Receiving data symbols with energy integration...");
           this.onStatusChange("RX ACOUSTIC INCOMING...");
         } else if (now - syncDetectTime > 350) {
-          rxState = 'IDLE'; // timeout
+          rxState = 'IDLE';
+          syncCounter = 0;
         }
       } else if (rxState === 'DATA') {
-        if (now >= nextSampleTime) {
-          // Compare the 4 candidate data frequencies (1300, 1650, 2000, 2350 Hz)
+        // Accumulate energy across the entire symbol duration (Matched Filter)
+        for (let s = 0; s < 4; s++) {
+          energyAccumulators[s] += getEnergy(this.DATA_FREQS[s]);
+        }
+
+        // When symbol duration has elapsed, pick the frequency with maximum integrated energy
+        if (now - symbolStartTime >= this.SYMBOL_MS) {
           let bestSymbol = 0;
           let maxEnergy = -1;
 
           for (let s = 0; s < 4; s++) {
-            const e = getEnergy(this.DATA_FREQS[s]);
-            if (e > maxEnergy) {
-              maxEnergy = e;
+            if (energyAccumulators[s] > maxEnergy) {
+              maxEnergy = energyAccumulators[s];
               bestSymbol = s;
             }
           }
 
           rxSymbols.push(bestSymbol);
-          nextSampleTime += this.SYMBOL_MS;
+          energyAccumulators = [0, 0, 0, 0];
+          symbolStartTime += this.SYMBOL_MS;
 
-          // Dynamically resolve packet length at symbol 16 (after byte 3 is received):
+          // Dynamically resolve packet length at symbol 16 (after byte 3):
           // byte 3: 0xFF (ACK) or 0xFD (Test Ping) -> 24 symbols (6 bytes)
           // byte 3: 1..4 (Emergency SOS) -> 56 symbols (14 bytes)
           if (rxSymbols.length === 16) {
@@ -359,9 +373,10 @@ class AudioModem {
             }
           }
 
-          if (rxSymbols.length >= expectedSymbols || (now - syncDetectTime > 4500)) {
+          if (rxSymbols.length >= expectedSymbols || (now - syncDetectTime > 6000)) {
             console.log(`🔊 Acoustic burst finished. Received ${rxSymbols.length}/${expectedSymbols} symbols.`);
             rxState = 'IDLE';
+            syncCounter = 0;
             this.currentRxState = 'LISTENING';
             this.processReceivedSymbols(rxSymbols);
           }

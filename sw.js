@@ -1,5 +1,5 @@
 // sw.js - Offline Service Worker Cache
-const CACHE_NAME = 'silentbridge-v7';
+const CACHE_NAME = 'silentbridge-v8';
 const ASSETS = [
   './',
   './index.html',
@@ -58,7 +58,12 @@ self.addEventListener('fetch', (e) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(e.request, toCache));
         }
         return networkRes;
-      }).catch(() => cached);
+      }).catch(() => {
+        if (e.request.mode === 'navigate') {
+          return caches.match('./index.html') || caches.match('./');
+        }
+        return cached;
+      });
     })
   );
 });
