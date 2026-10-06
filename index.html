@@ -195,9 +195,15 @@
     </div>
   </header>
 
-  <!-- Live Audio Spectrum Visualizer -->
-  <div class="bg-black px-4 py-1.5 border-b border-white/20">
-    <canvas id="visualizer" width="600" height="28" class="w-full h-7 rounded bg-neutral-950 border border-white/10"></canvas>
+  <!-- Live Audio Spectrum Visualizer & Acoustic Microphone Control -->
+  <div class="bg-black px-4 py-1.5 border-b border-white/20 flex flex-wrap items-center justify-between gap-2.5">
+    <div class="flex-1 min-w-[200px]">
+      <canvas id="visualizer" width="600" height="28" class="w-full h-7 rounded bg-neutral-950 border border-white/10"></canvas>
+    </div>
+    <button id="btnToggleMic" class="flex-shrink-0 flex items-center gap-1.5 bg-neutral-900 hover:bg-neutral-800 border border-emerald-400/60 px-2.5 py-1 rounded-md text-[10px] font-mono font-bold text-emerald-300 transition" title="Toggle acoustic microphone receiver for off-grid listening">
+      <span id="micDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+      <span id="micText">MIC: LISTENING AIRWAVES</span>
+    </button>
   </div>
 
   <!-- Real-Time Notification Banners -->

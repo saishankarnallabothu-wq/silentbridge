@@ -127,8 +127,10 @@ document.addEventListener("DOMContentLoaded", () => {
       if (retryBadge) retryBadge.innerText = `ATTEMPT ${beaconAttempt}/${MAX_BEACON_ATTEMPTS}`;
       console.log(`Re-broadcasting unacknowledged distress beacon #${activePendingPacket.msgId} (Attempt ${beaconAttempt})`);
 
-      const packetBytes = PacketEngine.encode(activePendingPacket);
-      await modem.transmitPacket(packetBytes);
+      const acousticBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
+        ? PacketEngine.encodeAcoustic(activePendingPacket)
+        : PacketEngine.encode(activePendingPacket);
+      await modem.transmitPacket(acousticBytes);
       broadcastMeshPacket(activePendingPacket);
     }, 12000);
   }
@@ -328,17 +330,56 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  function updateMicStatusUi() {
+    const micDot = document.getElementById("micDot");
+    const micText = document.getElementById("micText");
+    const btnToggleMic = document.getElementById("btnToggleMic");
+    if (!micDot || !micText) return;
+
+    if (modem && modem.isListening) {
+      micDot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+      micText.innerText = "MIC: LISTENING AIRWAVES";
+      micText.className = "text-emerald-300";
+      if (btnToggleMic) btnToggleMic.className = "flex-shrink-0 flex items-center gap-1.5 bg-neutral-900 hover:bg-neutral-800 border border-emerald-400/60 px-2.5 py-1 rounded-md text-[10px] font-mono font-bold text-emerald-300 transition";
+    } else {
+      micDot.className = "w-2 h-2 rounded-full bg-neutral-500";
+      micText.innerText = "MIC: OFF (TAP TO ACTIVATE)";
+      micText.className = "text-neutral-400";
+      if (btnToggleMic) btnToggleMic.className = "flex-shrink-0 flex items-center gap-1.5 bg-neutral-900 hover:bg-neutral-800 border border-white/20 px-2.5 py-1 rounded-md text-[10px] font-mono font-bold text-neutral-400 transition";
+    }
+  }
+
   // Initialize AudioModem with Live Spectrum Visualizer
   modem = new AudioModem((packet) => {
     handleReceivedPacket(packet, 'acoustic');
   }, (status) => {
     const badge = document.getElementById("statusBadge");
     if (badge) badge.innerText = status;
+    updateMicStatusUi();
   });
 
   const visualizerEl = document.getElementById("visualizer");
   if (visualizerEl) {
     modem.attachVisualizer(visualizerEl);
+  }
+
+  const btnToggleMic = document.getElementById("btnToggleMic");
+  if (btnToggleMic) {
+    btnToggleMic.addEventListener("click", async () => {
+      await modem.initAudio();
+      if (modem.isListening) {
+        if (modem.micStream) {
+          modem.micStream.getTracks().forEach(t => t.stop());
+          modem.micStream = null;
+        }
+        modem.isListening = false;
+        modem.onStatusChange("READY");
+        updateMicStatusUi();
+      } else {
+        await modem.startListening();
+        updateMicStatusUi();
+      }
+    });
   }
 
   const btnRoleSender = document.getElementById("btnRoleSender");
@@ -377,6 +418,8 @@ document.addEventListener("DOMContentLoaded", () => {
   function switchToReceiver() {
     currentRole = 'receiver';
     if (meshBridge) meshBridge.setRole('receiver');
+    modem.startListening();
+    updateMicStatusUi();
     btnRoleSender.className = "px-3.5 py-1.5 rounded-md font-bold transition text-neutral-400 hover:text-white";
     btnRoleReceiver.className = "px-3.5 py-1.5 rounded-md font-bold transition bg-white text-black shadow-sm";
     panelSender.classList.add("hidden");
@@ -560,8 +603,10 @@ document.addEventListener("DOMContentLoaded", () => {
       isPanic: true
     };
 
-    const packetBytes = PacketEngine.encode(packetObj);
-    await modem.transmitPacket(packetBytes);
+    const acousticBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
+      ? PacketEngine.encodeAcoustic(packetObj)
+      : PacketEngine.encode(packetObj);
+    await modem.transmitPacket(acousticBytes);
     broadcastMeshPacket(packetObj);
     startBeaconRetryLoop(packetObj);
 
@@ -601,8 +646,10 @@ document.addEventListener("DOMContentLoaded", () => {
       isPanic: false
     };
 
-    const packetBytes = PacketEngine.encode(packetObj);
-    await modem.transmitPacket(packetBytes);
+    const acousticBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
+      ? PacketEngine.encodeAcoustic(packetObj)
+      : PacketEngine.encode(packetObj);
+    await modem.transmitPacket(acousticBytes);
     broadcastMeshPacket(packetObj);
     startBeaconRetryLoop(packetObj);
 
@@ -733,8 +780,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const ackBtn = card.querySelector(".ack-btn");
       ackBtn.addEventListener("click", async () => {
         ackBtn.disabled = true;
-        ackBtn.innerText = "DISPATCHING ACK...";
-        const ackBytes = PacketEngine.encodeAck(packet.msgId);
+        const ackBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
+          ? PacketEngine.encodeAcoustic({ msgId: packet.msgId, type: 0xFF })
+          : PacketEngine.encodeAck(packet.msgId);
         const ackTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
         await modem.transmitPacket(ackBytes);

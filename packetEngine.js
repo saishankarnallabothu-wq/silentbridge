@@ -1,4 +1,4 @@
-// packetEngine.js - Full 64-Bit Float64 Double Precision Lossless Serialization
+// packetEngine.js - Full 64-Bit Float64 Serialization & Compact Acoustic PHY Codec
 const PacketEngine = {
   PACKET_SIZE: 40,
 
@@ -80,7 +80,75 @@ const PacketEngine = {
     view.setUint16(38, crc, false);
 
     return uint8;
+  },
+
+  // Compact High-Speed Acoustic Emergency Beacon (14 bytes for SOS, 6 bytes for ACK)
+  encodeAcoustic(packet) {
+    const isAck = packet.type === 0xFF;
+    const len = isAck ? 6 : 14;
+    const buf = new ArrayBuffer(len);
+    const view = new DataView(buf);
+    const uint8 = new Uint8Array(buf);
+
+    view.setUint8(0, 0x53); // 'S' marker
+    view.setUint16(1, (packet.msgId || 1000) & 0xFFFF, false);
+    view.setUint8(3, (packet.type || 1) & 0xFF);
+
+    if (isAck) {
+      const crc = CRC16.compute(uint8.subarray(0, 4));
+      view.setUint16(4, crc, false);
+    } else {
+      // 5 decimal places provides ~1.1 meter satellite precision
+      view.setInt32(4, Math.round((Number(packet.lat) || 0) * 100000), false);
+      view.setInt32(8, Math.round((Number(packet.lon) || 0) * 100000), false);
+      const crc = CRC16.compute(uint8.subarray(0, 12));
+      view.setUint16(12, crc, false);
+    }
+
+    return uint8;
+  },
+
+  decodeAcoustic(uint8Array) {
+    if (!uint8Array || uint8Array.length < 6) return null;
+    const view = new DataView(uint8Array.buffer, uint8Array.byteOffset, uint8Array.byteLength);
+
+    if (view.getUint8(0) !== 0x53) return null;
+
+    const type = view.getUint8(3);
+    const isAck = type === 0xFF;
+
+    if (isAck) {
+      const receivedCrc = view.getUint16(4, false);
+      const computedCrc = CRC16.compute(uint8Array.subarray(0, 4));
+      if (receivedCrc !== computedCrc) return null;
+
+      const msgId = view.getUint16(1, false);
+      return { msgId, type: 0xFF };
+    } else {
+      if (uint8Array.length < 14) return null;
+
+      const receivedCrc = view.getUint16(12, false);
+      const computedCrc = CRC16.compute(uint8Array.subarray(0, 12));
+      if (receivedCrc !== computedCrc) return null;
+
+      const msgId = view.getUint16(1, false);
+      const lat = view.getInt32(4, false) / 100000;
+      const lon = view.getInt32(8, false) / 100000;
+
+      return {
+        msgId,
+        type,
+        lat,
+        lon,
+        accuracy: 10,
+        ttl: 3,
+        text: "Off-Grid Acoustic SOS",
+        isPanic: type === 2
+      };
+    }
   }
 };
 
-window.PacketEngine = PacketEngine;
+if (typeof window !== 'undefined') {
+  window.PacketEngine = PacketEngine;
+}
