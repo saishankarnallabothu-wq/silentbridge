@@ -184,15 +184,13 @@ document.addEventListener("DOMContentLoaded", () => {
   function getAccurateDeviceLocation() {
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
-        console.warn("Geolocation not supported by device.");
         resolve(getFallbackLocation());
         return;
       }
 
       const geoTimeout = setTimeout(() => {
-        console.warn("Satellite GPS lock timeout, using cached/network fallback.");
         resolve(getFallbackLocation());
-      }, 7000);
+      }, 2500);
 
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -202,9 +200,12 @@ document.addEventListener("DOMContentLoaded", () => {
           currentAccuracy = Math.round(pos.coords.accuracy);
 
           const coordsText = `${currentLat.toFixed(6)}, ${currentLon.toFixed(6)}`;
-          document.getElementById("gpsCoords").innerText = coordsText;
-          document.getElementById("gpsAccuracy").innerText = `Accuracy: ±${currentAccuracy}m (Exact Satellite Lock)`;
-          document.getElementById("gpsTimestamp").innerText = `Last synced: ${new Date().toLocaleTimeString()}`;
+          const coordsEl = document.getElementById("gpsCoords");
+          const accEl = document.getElementById("gpsAccuracy");
+          const timeEl = document.getElementById("gpsTimestamp");
+          if (coordsEl) coordsEl.innerText = coordsText;
+          if (accEl) accEl.innerText = `Accuracy: ±${currentAccuracy}m (Satellite Lock)`;
+          if (timeEl) timeEl.innerText = `Last synced: ${new Date().toLocaleTimeString()}`;
 
           resolve({
             lat: currentLat,
@@ -214,31 +215,10 @@ document.addEventListener("DOMContentLoaded", () => {
         },
         (err) => {
           clearTimeout(geoTimeout);
-          console.warn("Satellite precision lock retry:", err.message);
-          navigator.geolocation.getCurrentPosition(
-            (fallbackPos) => {
-              currentLat = fallbackPos.coords.latitude;
-              currentLon = fallbackPos.coords.longitude;
-              currentAccuracy = Math.round(fallbackPos.coords.accuracy);
-
-              document.getElementById("gpsCoords").innerText = `${currentLat.toFixed(6)}, ${currentLon.toFixed(6)}`;
-              document.getElementById("gpsAccuracy").innerText = `Accuracy: ±${currentAccuracy}m`;
-              document.getElementById("gpsTimestamp").innerText = `Last synced: ${new Date().toLocaleTimeString()}`;
-
-              resolve({
-                lat: currentLat,
-                lon: currentLon,
-                accuracy: currentAccuracy
-              });
-            },
-            (finalErr) => {
-              console.warn("Geolocation fallback notice:", finalErr.message);
-              resolve(getFallbackLocation());
-            },
-            { enableHighAccuracy: false, timeout: 4000 }
-          );
+          console.warn("GPS lookup note:", err.message);
+          resolve(getFallbackLocation());
         },
-        { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 2500, maximumAge: 15000 }
       );
     });
   }
@@ -572,15 +552,17 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // 1-Tap Instant Panic Button with Forced Precision GPS Lock
+  // 1-Tap Instant Panic Button with Immediate Non-Blocking Audio Output
   document.getElementById("btnInstantPanic").addEventListener("click", async () => {
     await modem.initAudio();
     const btn = document.getElementById("btnInstantPanic");
-    btn.innerText = "🛰️ FETCHING EXACT SATELLITE POSITION...";
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = `<span>🔊</span> BROADCASTING ACOUSTIC SOUND...`;
 
-    let loc = await getAccurateDeviceLocation();
-    if (!loc) loc = getFallbackLocation();
-    btn.innerHTML = `<span>🚨</span> TRANSMIT IMMEDIATE EMERGENCY GPS`;
+    // Immediate coordinates (0ms latency, prevents mobile audio gesture expiry)
+    let loc = (currentLat && currentLon)
+      ? { lat: currentLat, lon: currentLon, accuracy: currentAccuracy || 15 }
+      : getFallbackLocation();
 
     const nameInput = document.getElementById("txtName");
     const survivorName = nameInput && nameInput.value.trim() ? nameInput.value.trim() : "Survivor";
@@ -606,22 +588,43 @@ document.addEventListener("DOMContentLoaded", () => {
     const acousticBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
       ? PacketEngine.encodeAcoustic(packetObj)
       : PacketEngine.encode(packetObj);
+
+    // Transmit over speaker immediately inside touch gesture!
     await modem.transmitPacket(acousticBytes);
     broadcastMeshPacket(packetObj);
     startBeaconRetryLoop(packetObj);
 
+    btn.innerHTML = originalHtml;
+
+    // Auto-listen on microphone so sender can hear the Rescuer HQ ACK chime!
+    setTimeout(() => {
+      if (currentRole === 'sender') {
+        modem.startListening();
+        updateMicStatusUi();
+      }
+    }, 4000);
+
+    // Refresh satellite fix in background
+    getAccurateDeviceLocation().then(fresh => {
+      if (fresh && activePendingPacket) {
+        activePendingPacket.lat = Number(fresh.lat);
+        activePendingPacket.lon = Number(fresh.lon);
+        activePendingPacket.accuracy = Number(fresh.accuracy);
+      }
+    });
+
     resetSenderInputs();
   });
 
-  // Standard Transmit Action with Forced Precision GPS Lock
+  // Standard Transmit Action with Immediate Non-Blocking Audio Output
   document.getElementById("btnSend").addEventListener("click", async () => {
     await modem.initAudio();
     const btn = document.getElementById("btnSend");
-    btn.innerText = "🛰️ FETCHING EXACT SATELLITE POSITION...";
+    btn.innerText = "🔊 BROADCASTING ACOUSTIC SOUND...";
 
-    let loc = await getAccurateDeviceLocation();
-    if (!loc) loc = getFallbackLocation();
-    btn.innerText = "📢 BROADCAST WITH NOTE / AUDIO";
+    let loc = (currentLat && currentLon)
+      ? { lat: currentLat, lon: currentLon, accuracy: currentAccuracy || 15 }
+      : getFallbackLocation();
 
     const nameInput = document.getElementById("txtName");
     const textInput = document.getElementById("txtMessage");
@@ -649,12 +652,66 @@ document.addEventListener("DOMContentLoaded", () => {
     const acousticBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
       ? PacketEngine.encodeAcoustic(packetObj)
       : PacketEngine.encode(packetObj);
+
     await modem.transmitPacket(acousticBytes);
     broadcastMeshPacket(packetObj);
     startBeaconRetryLoop(packetObj);
 
+    btn.innerText = "📢 BROADCAST WITH NOTE / AUDIO";
+
+    setTimeout(() => {
+      if (currentRole === 'sender') {
+        modem.startListening();
+        updateMicStatusUi();
+      }
+    }, 4000);
+
+    getAccurateDeviceLocation().then(fresh => {
+      if (fresh && activePendingPacket) {
+        activePendingPacket.lat = Number(fresh.lat);
+        activePendingPacket.lon = Number(fresh.lon);
+        activePendingPacket.accuracy = Number(fresh.accuracy);
+      }
+    });
+
     resetSenderInputs();
   });
+
+  // Offline Acoustic Test Controls
+  const btnTestSpeaker = document.getElementById("btnTestSpeaker");
+  if (btnTestSpeaker) {
+    btnTestSpeaker.addEventListener("click", async () => {
+      await modem.initAudio();
+      btnTestSpeaker.innerText = "🔊 Chirping...";
+      await modem.playTestChirp();
+      setTimeout(() => {
+        btnTestSpeaker.innerHTML = "<span>🔊</span> Test Speaker";
+      }, 600);
+    });
+  }
+
+  const btnAcousticPing = document.getElementById("btnAcousticPing");
+  if (btnAcousticPing) {
+    btnAcousticPing.addEventListener("click", async () => {
+      await modem.initAudio();
+      const pingId = Math.floor(1000 + Math.random() * 9000);
+      btnAcousticPing.innerText = `📶 Sending Ping #${pingId}...`;
+
+      const pingBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
+        ? PacketEngine.encodeAcoustic({ msgId: pingId, type: 0xFD })
+        : null;
+
+      if (pingBytes) {
+        await modem.transmitPacket(pingBytes);
+      }
+      broadcastMeshPacket({ msgId: pingId, type: 0xFD, isTest: true, text: "Acoustic Test Ping" });
+
+      btnAcousticPing.innerText = `✓ Sent #${pingId}!`;
+      setTimeout(() => {
+        btnAcousticPing.innerHTML = "<span>📶</span> Acoustic Ping (HQ)";
+      }, 2500);
+    });
+  }
 
   // Receiver Handler with High-Precision Marker & Direct OpenStreetMap Focus
   function handleReceivedPacket(packet, transport) {
@@ -910,9 +967,16 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (btnTestSignal) {
-    btnTestSignal.addEventListener("click", () => {
+    btnTestSignal.addEventListener("click", async () => {
+      await modem.initAudio();
       const pingId = meshBridge.sendTestPing();
-      btnTestSignal.innerText = `✓ Ping #${pingId} Dispatched!`;
+      const pingBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
+        ? PacketEngine.encodeAcoustic({ msgId: pingId, type: 0xFD })
+        : null;
+      if (pingBytes) {
+        await modem.transmitPacket(pingBytes);
+      }
+      btnTestSignal.innerText = `✓ Ping #${pingId} Dispatched (Acoustic + Mesh)!`;
       setTimeout(() => {
         btnTestSignal.innerHTML = `<span>📶</span> Send Test Ping to HQ / Sender`;
       }, 2500);
@@ -928,6 +992,16 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnDismissTestPing) {
     btnDismissTestPing.addEventListener("click", () => {
       document.getElementById("testPingBanner").classList.add("hidden");
+    });
+  }
+
+  // Register Offline Service Worker for 100% No-Network Standalone Operation
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').then((reg) => {
+      console.log('SilentBridge Offline ServiceWorker active:', reg.scope);
+      reg.update();
+    }).catch((err) => {
+      console.warn('ServiceWorker registration note:', err);
     });
   }
 });

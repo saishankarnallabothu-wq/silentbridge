@@ -20,4 +20,9 @@ class CRC16 {
   }
 }
 
-window.CRC16 = CRC16;
+if (typeof window !== 'undefined') {
+  window.CRC16 = CRC16;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = CRC16;
+}

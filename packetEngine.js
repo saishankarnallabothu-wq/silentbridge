@@ -82,10 +82,10 @@ const PacketEngine = {
     return uint8;
   },
 
-  // Compact High-Speed Acoustic Emergency Beacon (14 bytes for SOS, 6 bytes for ACK)
+  // Compact High-Speed Acoustic Emergency Beacon (14 bytes for SOS, 6 bytes for ACK / Test Ping)
   encodeAcoustic(packet) {
-    const isAck = packet.type === 0xFF;
-    const len = isAck ? 6 : 14;
+    const isShort = packet.type === 0xFF || packet.type === 0xFD;
+    const len = isShort ? 6 : 14;
     const buf = new ArrayBuffer(len);
     const view = new DataView(buf);
     const uint8 = new Uint8Array(buf);
@@ -94,7 +94,7 @@ const PacketEngine = {
     view.setUint16(1, (packet.msgId || 1000) & 0xFFFF, false);
     view.setUint8(3, (packet.type || 1) & 0xFF);
 
-    if (isAck) {
+    if (isShort) {
       const crc = CRC16.compute(uint8.subarray(0, 4));
       view.setUint16(4, crc, false);
     } else {
@@ -115,15 +115,20 @@ const PacketEngine = {
     if (view.getUint8(0) !== 0x53) return null;
 
     const type = view.getUint8(3);
-    const isAck = type === 0xFF;
+    const isShort = type === 0xFF || type === 0xFD;
 
-    if (isAck) {
+    if (isShort) {
       const receivedCrc = view.getUint16(4, false);
       const computedCrc = CRC16.compute(uint8Array.subarray(0, 4));
       if (receivedCrc !== computedCrc) return null;
 
       const msgId = view.getUint16(1, false);
-      return { msgId, type: 0xFF };
+      return {
+        msgId,
+        type,
+        isTest: type === 0xFD,
+        text: type === 0xFD ? "Acoustic Test Ping" : "ACK"
+      };
     } else {
       if (uint8Array.length < 14) return null;
 
@@ -151,4 +156,7 @@ const PacketEngine = {
 
 if (typeof window !== 'undefined') {
   window.PacketEngine = PacketEngine;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = PacketEngine;
 }
