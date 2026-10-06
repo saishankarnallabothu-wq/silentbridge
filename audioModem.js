@@ -309,22 +309,14 @@ class AudioModem {
 
       if (rxState === 'IDLE') {
         this.currentRxState = 'LISTENING';
-        // Detect 2700 Hz Sync Tone clearly above ambient noise floor (sensitive to both phone and laptop speakers)
-        if (syncEnergy > Math.max(16, noiseFloor + 8)) {
+        // Detect 2700 Hz Sync Tone clearly above ambient noise floor
+        if (syncEnergy > Math.max(22, noiseFloor + 10)) {
           rxState = 'WAIT_SYNC_END';
           syncDetectTime = now;
         }
       } else if (rxState === 'WAIT_SYNC_END') {
-        // Detect start of data: sync tone drops OR any data tone begins
-        let maxDataEnergy = 0;
-        for (let s = 0; s < 4; s++) {
-          const e = getEnergy(this.DATA_FREQS[s]);
-          if (e > maxDataEnergy) maxDataEnergy = e;
-        }
-
-        const syncEnded = (syncEnergy < Math.max(14, noiseFloor + 6))
-          || (maxDataEnergy > Math.max(16, noiseFloor + 8))
-          || (now - syncDetectTime > 125);
+        // Wait until sync tone ends (or max 125ms from initial sync lock)
+        const syncEnded = (syncEnergy < Math.max(16, noiseFloor + 7)) || (now - syncDetectTime > 125);
 
         if (syncEnded) {
           // Sync tone has ended: data transmission begins NOW!

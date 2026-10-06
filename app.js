@@ -154,13 +154,19 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Initialize Leaflet Tactical Map
-  map = L.map('map').setView([20.5937, 78.9629], 5);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '© OpenStreetMap'
-  }).addTo(map);
-  markersLayer = L.layerGroup().addTo(map);
+  // Initialize Leaflet Tactical Map (safely handles no-network standalone operation)
+  if (typeof L !== 'undefined' && document.getElementById('map')) {
+    try {
+      map = L.map('map').setView([20.5937, 78.9629], 5);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap'
+      }).addTo(map);
+      markersLayer = L.layerGroup().addTo(map);
+    } catch (mapErr) {
+      console.warn("Leaflet map initialization note:", mapErr);
+    }
+  }
 
   // Fallback location helper if GPS satellite lock is taking time or indoors
   function getFallbackLocation() {
@@ -570,9 +576,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 1-Tap Instant Panic Button with Immediate Non-Blocking Audio Output
   document.getElementById("btnInstantPanic").addEventListener("click", async () => {
-    // 1. Immediately request/start microphone within user gesture so sender can receive acoustic ACK!
-    await modem.startListening();
-    updateMicStatusUi();
+    await modem.initAudio();
 
     const btn = document.getElementById("btnInstantPanic");
     const originalHtml = btn.innerHTML;
@@ -608,12 +612,18 @@ document.addEventListener("DOMContentLoaded", () => {
       ? PacketEngine.encodeAcoustic(packetObj)
       : PacketEngine.encode(packetObj);
 
-    // Transmit over speaker immediately inside touch gesture!
+    // Transmit over speaker immediately at full loudspeaker volume!
     await modem.transmitPacket(acousticBytes);
     broadcastMeshPacket(packetObj);
     startBeaconRetryLoop(packetObj);
 
     btn.innerHTML = originalHtml;
+
+    // Post-transmission: start listening on microphone so sender can receive Rescue HQ's acoustic ACK!
+    if (currentRole === 'sender') {
+      modem.startListening();
+      updateMicStatusUi();
+    }
 
     // Refresh satellite fix in background
     getAccurateDeviceLocation().then(fresh => {
@@ -629,9 +639,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Standard Transmit Action with Immediate Non-Blocking Audio Output
   document.getElementById("btnSend").addEventListener("click", async () => {
-    // Immediately start listening within touch gesture
-    await modem.startListening();
-    updateMicStatusUi();
+    await modem.initAudio();
 
     const btn = document.getElementById("btnSend");
     btn.innerText = "🔊 BROADCASTING ACOUSTIC SOUND...";
@@ -673,6 +681,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     btn.innerText = "📢 BROADCAST WITH NOTE / AUDIO";
 
+    if (currentRole === 'sender') {
+      modem.startListening();
+      updateMicStatusUi();
+    }
+
     getAccurateDeviceLocation().then(fresh => {
       if (fresh && activePendingPacket) {
         activePendingPacket.lat = Number(fresh.lat);
@@ -700,8 +713,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnAcousticPing = document.getElementById("btnAcousticPing");
   if (btnAcousticPing) {
     btnAcousticPing.addEventListener("click", async () => {
-      await modem.startListening();
-      updateMicStatusUi();
+      await modem.initAudio();
       const pingId = Math.floor(1000 + Math.random() * 9000);
       btnAcousticPing.innerText = `📶 Sending Ping #${pingId}...`;
 
@@ -713,6 +725,11 @@ document.addEventListener("DOMContentLoaded", () => {
         await modem.transmitPacket(pingBytes);
       }
       broadcastMeshPacket({ msgId: pingId, type: 0xFD, isTest: true, text: "Acoustic Test Ping" });
+
+      if (currentRole === 'sender') {
+        modem.startListening();
+        updateMicStatusUi();
+      }
 
       btnAcousticPing.innerText = `✓ Sent #${pingId}!`;
       setTimeout(() => {
@@ -784,37 +801,39 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
 
-      // Add High-Precision Map Marker
-      const marker = L.marker([validLat, validLon]).addTo(markersLayer);
-      L.circle([validLat, validLon], {
-        color: '#ffffff',
-        fillColor: '#ffffff',
-        fillOpacity: 0.25,
-        radius: validAcc
-      }).addTo(markersLayer);
+      // Add High-Precision Map Marker (safely checks if Leaflet is available offline)
+      if (typeof L !== 'undefined' && map && markersLayer) {
+        try {
+          const marker = L.marker([validLat, validLon]).addTo(markersLayer);
+          L.circle([validLat, validLon], {
+            color: '#ffffff',
+            fillColor: '#ffffff',
+            fillOpacity: 0.25,
+            radius: validAcc
+          }).addTo(markersLayer);
 
-      const googleMapsNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${validLat},${validLon}`;
+          const googleMapsNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${validLat},${validLon}`;
 
-      marker.bindPopup(`
-        <div class="font-mono text-xs text-black">
-          <b>${packet.isPanic ? '🚨 CRITICAL PANIC' : 'SOS Beacon'} #${packet.msgId}</b><br>
-          <span><b>Survivor:</b> ${survivorName}</span><br>
-          <span><b>Time:</b> ${currentTime}</span><br>
-          <span><b>GPS:</b> ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)</span><br>
-          <a href="${googleMapsNavUrl}" target="_blank" style="color: #0066cc; text-decoration: underline; font-weight: bold; margin-top: 4px; display: inline-block;">🗺️ Open Turn-by-Turn Route</a>
-        </div>
-      `).openPopup();
+          marker.bindPopup(`
+            <div class="font-mono text-xs text-black">
+              <b>${packet.isPanic ? '🚨 CRITICAL PANIC' : 'SOS Beacon'} #${packet.msgId}</b><br>
+              <span><b>Survivor:</b> ${survivorName}</span><br>
+              <span><b>Time:</b> ${currentTime}</span><br>
+              <span><b>GPS:</b> ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)</span><br>
+              <a href="${googleMapsNavUrl}" target="_blank" style="color: #0066cc; text-decoration: underline; font-weight: bold; margin-top: 4px; display: inline-block;">🗺️ Open Turn-by-Turn Route</a>
+            </div>
+          `).openPopup();
 
-      // Pan & Zoom directly onto survivor coordinates or fit all active markers across different areas
-      try {
-        if (markersLayer.getLayers().length > 2) {
-          const group = L.featureGroup(markersLayer.getLayers());
-          map.fitBounds(group.getBounds().pad(0.2));
-        } else {
-          map.setView([validLat, validLon], 16);
+          // Pan & Zoom directly onto survivor coordinates or fit all active markers across different areas
+          if (markersLayer.getLayers().length > 2) {
+            const group = L.featureGroup(markersLayer.getLayers());
+            map.fitBounds(group.getBounds().pad(0.2));
+          } else {
+            map.setView([validLat, validLon], 16);
+          }
+        } catch (mapErr) {
+          console.warn("Leaflet marker placement note:", mapErr);
         }
-      } catch (e) {
-        map.setView([validLat, validLon], 16);
       }
 
       // Add Card to Live Incident Feed
@@ -1017,6 +1036,9 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("testPingBanner").classList.add("hidden");
     });
   }
+
+  // Initialize microphone UI state on load
+  updateMicStatusUi();
 
   // Register Offline Service Worker for 100% No-Network Standalone Operation
   if ('serviceWorker' in navigator) {
