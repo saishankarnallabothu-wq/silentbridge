@@ -91,7 +91,7 @@ const PacketEngine = {
     const uint8 = new Uint8Array(buf);
 
     view.setUint8(0, 0x53); // 'S' marker
-    view.setUint16(1, (packet.msgId || 1000) & 0xFFFF, false);
+    view.setUint16(1, (packet.msgId !== undefined && packet.msgId !== null ? Number(packet.msgId) : 0) & 0xFFFF, false);
     view.setUint8(3, (packet.type || 1) & 0xFF);
 
     if (isShort) {
@@ -123,9 +123,11 @@ const PacketEngine = {
       if (receivedCrc !== computedCrc) return null;
 
       const msgId = view.getUint16(1, false);
+      const isBroadcast = (msgId === 0 || msgId === 1000);
       return {
         msgId,
         type,
+        isBroadcast,
         isTest: type === 0xFD,
         text: type === 0xFD ? "Acoustic Test Ping" : "ACK"
       };

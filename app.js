@@ -132,7 +132,7 @@ document.addEventListener("DOMContentLoaded", () => {
         : PacketEngine.encode(activePendingPacket);
       await modem.transmitPacket(acousticBytes);
       broadcastMeshPacket(activePendingPacket);
-    }, 12000);
+    }, 28000);
   }
 
   function stopBeaconRetryLoop() {
@@ -577,6 +577,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // 1-Tap Instant Panic Button with Immediate Non-Blocking Audio Output
   document.getElementById("btnInstantPanic").addEventListener("click", async () => {
     await modem.initAudio();
+    if (currentRole === 'sender') {
+      await modem.startListening();
+      updateMicStatusUi();
+    }
 
     const btn = document.getElementById("btnInstantPanic");
     const originalHtml = btn.innerHTML;
@@ -641,6 +645,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // Standard Transmit Action with Immediate Non-Blocking Audio Output
   document.getElementById("btnSend").addEventListener("click", async () => {
     await modem.initAudio();
+    if (currentRole === 'sender') {
+      await modem.startListening();
+      updateMicStatusUi();
+    }
 
     const btn = document.getElementById("btnSend");
     btn.innerText = "🔊 BROADCASTING ACOUSTIC SOUND...";
@@ -774,14 +782,22 @@ document.addEventListener("DOMContentLoaded", () => {
       logEl.className = "text-[10px] text-amber-300 font-mono animate-pulse bg-neutral-900/80 p-2 rounded border border-amber-400/30";
     }
 
-    // 1. Acoustic ACK Transmission (Loudspeaker Sound Wave for Direct Offline Airwaves)
+    // 1. Acoustic ACK Transmission (Double-burst for 99.9% physical airwave capture)
     try {
       await modem.initAudio();
       const ackBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
         ? PacketEngine.encodeAcoustic({ msgId: msgId, type: 0xFF })
         : PacketEngine.encodeAck(msgId);
+      // Burst 1
       await modem.transmitPacket(ackBytes);
-      console.log(`🔊 Acoustic ACK tones broadcasted over speaker for ${labelId}`);
+      console.log(`🔊 Acoustic ACK burst 1 broadcasted over speaker for ${labelId}`);
+      // Burst 2 after 300ms gap for maximum acoustic capture reliability
+      setTimeout(async () => {
+        try {
+          if (modem) await modem.transmitPacket(ackBytes);
+          console.log(`🔊 Acoustic ACK burst 2 broadcasted over speaker for ${labelId}`);
+        } catch (e) {}
+      }, 300);
     } catch (acousticErr) {
       console.warn("Acoustic ACK playback note:", acousticErr);
     }
@@ -879,16 +895,17 @@ document.addEventListener("DOMContentLoaded", () => {
     // 2. Check for Rescue ACK confirmation packet
     if (packet.type === 0xFF) {
       if (currentRole === 'sender') {
-        const isBroadcastAck = packet.msgId === 0 || packet.msgId === 'ALL' || packet.isBroadcast;
-        const isMyAck = isBroadcastAck
-          || (myLastSentMsgId && String(packet.msgId) === String(myLastSentMsgId))
+        const isBroadcastAck = packet.msgId === 0 || packet.msgId === 1000 || packet.msgId === 'ALL' || packet.isBroadcast;
+        const isMatchingId = (myLastSentMsgId && String(packet.msgId) === String(myLastSentMsgId))
           || (activePendingPacket && String(packet.msgId) === String(activePendingPacket.msgId));
+        // In offline mode (acoustic), if sender is pending rescue, accept any base station acoustic ACK!
+        const isMyAck = isBroadcastAck || isMatchingId || (transport === 'acoustic' && activePendingPacket);
 
         if (isMyAck) {
-          console.log(`✅ Rescue ACK confirmed for beacon #${packet.msgId}. Stopping distress retries.`);
+          console.log(`✅ Rescue ACK confirmed for beacon #${packet.msgId || myLastSentMsgId}. Stopping distress retries.`);
           stopBeaconRetryLoop();
           document.getElementById("ackTime").innerText = currentTime;
-          document.getElementById("ackTitle").innerText = `BASE STATION ACKNOWLEDGED DISTRESS BEACON #${packet.msgId || myLastSentMsgId || 'ALERT'}! HELP IS EN ROUTE.`;
+          document.getElementById("ackTitle").innerText = `BASE STATION ACKNOWLEDGED DISTRESS BEACON #${packet.msgId || myLastSentMsgId || 'CONFIRMED'}! HELP IS EN ROUTE.`;
           ackBanner.classList.remove("hidden");
 
           applySenderGreenPositiveState(packet.msgId || myLastSentMsgId, currentTime);

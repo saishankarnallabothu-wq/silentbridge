@@ -326,8 +326,10 @@ class AudioModem {
         }
       } else if (rxState === 'WAIT_SYNC_END') {
         if (syncEnergy > peakSyncEnergy) peakSyncEnergy = syncEnergy;
-        // Sync tone ends: sync frequency energy drops by >50% from its peak, or hits baseline threshold, or 150ms timeout
-        const syncEnded = (syncEnergy < Math.max(14, peakSyncEnergy * 0.48)) || (now - syncDetectTime > 150);
+        const elapsedSinceSync = now - syncDetectTime;
+        // The sync tone is 150ms long. Must wait at least 90ms after 2-tick lock before checking falloff!
+        const canEnd = elapsedSinceSync >= 90;
+        const syncEnded = canEnd && ((syncEnergy < Math.max(14, peakSyncEnergy * 0.48)) || (elapsedSinceSync > 140));
 
         if (syncEnded) {
           rxState = 'DATA';
@@ -339,7 +341,7 @@ class AudioModem {
           peakSyncEnergy = 0;
           console.log("🔊 Acoustic sync locked! Receiving data symbols with energy integration...");
           this.onStatusChange("RX ACOUSTIC INCOMING...");
-        } else if (now - syncDetectTime > 350) {
+        } else if (elapsedSinceSync > 350) {
           rxState = 'IDLE';
           syncCounter = 0;
           peakSyncEnergy = 0;
@@ -366,20 +368,28 @@ class AudioModem {
           energyAccumulators = [0, 0, 0, 0];
           symbolStartTime += this.SYMBOL_MS;
 
-          // Dynamically resolve packet length at symbol 16 (after byte 3):
-          // byte 3: 0xFF (ACK) or 0xFD (Test Ping) -> 24 symbols (6 bytes)
-          // byte 3: 1..4 (Emergency SOS) -> 56 symbols (14 bytes)
-          if (rxSymbols.length === 16) {
-            const byte3 = (rxSymbols[12] << 6) | (rxSymbols[13] << 4) | (rxSymbols[14] << 2) | rxSymbols[15];
-            if (byte3 === 0xFF || byte3 === 0xFD) {
-              expectedSymbols = 24;
-            } else {
-              expectedSymbols = 56;
+          // Immediate CRC verification for short 6-byte packet (24 symbols: ACK or Ping)
+          if (rxSymbols.length >= 24 && rxSymbols.length <= 28) {
+            for (let offset = 0; offset <= rxSymbols.length - 24; offset++) {
+              const testBytes = [];
+              for (let i = offset; i < offset + 24; i += 4) {
+                testBytes.push((rxSymbols[i] << 6) | (rxSymbols[i + 1] << 4) | (rxSymbols[i + 2] << 2) | rxSymbols[i + 3]);
+              }
+              const testPacket = (typeof PacketEngine !== 'undefined') ? PacketEngine.decodeAcoustic(new Uint8Array(testBytes)) : null;
+              if (testPacket && (testPacket.type === 0xFF || testPacket.type === 0xFD)) {
+                console.log(`✅ Immediate verified 6-byte Acoustic ${testPacket.text} burst detected at offset ${offset}!`);
+                rxState = 'IDLE';
+                syncCounter = 0;
+                this.currentRxState = 'LISTENING';
+                this.processReceivedSymbols(rxSymbols.slice(offset, offset + 24));
+                return;
+              }
             }
           }
 
-          if (rxSymbols.length >= expectedSymbols || (now - syncDetectTime > 6000)) {
-            console.log(`🔊 Acoustic burst finished. Received ${rxSymbols.length}/${expectedSymbols} symbols.`);
+          // Full packet verification (56 symbols for 14-byte SOS)
+          if (rxSymbols.length >= 56 || (now - syncDetectTime > 5500)) {
+            console.log(`🔊 Acoustic burst finished. Received ${rxSymbols.length} symbols.`);
             rxState = 'IDLE';
             syncCounter = 0;
             this.currentRxState = 'LISTENING';
@@ -396,24 +406,27 @@ class AudioModem {
       return;
     }
 
-    // Convert 2-bit symbols back into 8-bit bytes (4 symbols per byte)
-    const bytes = [];
-    for (let i = 0; i + 3 < symbols.length; i += 4) {
-      const b = (symbols[i] << 6) | (symbols[i + 1] << 4) | (symbols[i + 2] << 2) | symbols[i + 3];
-      bytes.push(b);
-    }
-
-    const uint8 = new Uint8Array(bytes);
-    console.log("Decoded raw acoustic bytes:", Array.from(uint8).map(b => b.toString(16).padStart(2, '0')).join(' '));
-
+    // Try decoding both exact length and sliding window offsets (offset 0 and offset 1)
     let decoded = null;
-    if (typeof PacketEngine !== 'undefined') {
-      if (typeof PacketEngine.decodeAcoustic === 'function') {
-        decoded = PacketEngine.decodeAcoustic(uint8);
+    const maxOffset = Math.min(2, Math.max(0, symbols.length - 24));
+
+    for (let offset = 0; offset <= maxOffset; offset++) {
+      const bytes = [];
+      const len = (symbols.length - offset >= 56) ? 56 : 24;
+      for (let i = offset; i + 3 < offset + len && i + 3 < symbols.length; i += 4) {
+        const b = (symbols[i] << 6) | (symbols[i + 1] << 4) | (symbols[i + 2] << 2) | symbols[i + 3];
+        bytes.push(b);
       }
-      if (!decoded && typeof PacketEngine.decode === 'function') {
-        decoded = PacketEngine.decode(uint8);
+      const uint8 = new Uint8Array(bytes);
+      if (typeof PacketEngine !== 'undefined') {
+        if (typeof PacketEngine.decodeAcoustic === 'function') {
+          decoded = PacketEngine.decodeAcoustic(uint8);
+        }
+        if (!decoded && typeof PacketEngine.decode === 'function') {
+          decoded = PacketEngine.decode(uint8);
+        }
       }
+      if (decoded) break;
     }
 
     if (decoded) {
