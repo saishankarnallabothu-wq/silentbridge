@@ -157,13 +157,18 @@ class AudioModem {
 
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        this.micStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false
-          }
-        });
+        try {
+          this.micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false
+            }
+          });
+        } catch (constraintErr) {
+          console.warn("Specialized microphone constraints unsupported on this device, using standard audio: true", constraintErr);
+          this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
 
         if (this.audioCtx && this.analyser) {
           this.micSource = this.audioCtx.createMediaStreamSource(this.micStream);
@@ -272,12 +277,12 @@ class AudioModem {
     let nextSampleTime = 0;
     let syncDetectTime = 0;
 
-    const SAMPLE_RATE = this.audioCtx ? this.audioCtx.sampleRate : 48000;
     const FFT_SIZE = 2048;
 
     this.demodInterval = setInterval(() => {
       if (!this.analyser || this.isTransmitting) return;
 
+      const SAMPLE_RATE = (this.audioCtx && this.audioCtx.sampleRate) || 48000;
       const bufferLength = this.analyser.frequencyBinCount;
       const freqData = new Uint8Array(bufferLength);
       this.analyser.getByteFrequencyData(freqData);
@@ -304,14 +309,23 @@ class AudioModem {
 
       if (rxState === 'IDLE') {
         this.currentRxState = 'LISTENING';
-        // Detect 2700 Hz Sync Tone clearly above ambient noise floor
-        if (syncEnergy > Math.max(25, noiseFloor + 12)) {
+        // Detect 2700 Hz Sync Tone clearly above ambient noise floor (sensitive to both phone and laptop speakers)
+        if (syncEnergy > Math.max(16, noiseFloor + 8)) {
           rxState = 'WAIT_SYNC_END';
           syncDetectTime = now;
         }
       } else if (rxState === 'WAIT_SYNC_END') {
-        // Wait until sync tone ends (or max 125ms from initial sync lock)
-        const syncEnded = (syncEnergy < Math.max(18, noiseFloor + 8)) || (now - syncDetectTime > 125);
+        // Detect start of data: sync tone drops OR any data tone begins
+        let maxDataEnergy = 0;
+        for (let s = 0; s < 4; s++) {
+          const e = getEnergy(this.DATA_FREQS[s]);
+          if (e > maxDataEnergy) maxDataEnergy = e;
+        }
+
+        const syncEnded = (syncEnergy < Math.max(14, noiseFloor + 6))
+          || (maxDataEnergy > Math.max(16, noiseFloor + 8))
+          || (now - syncDetectTime > 125);
+
         if (syncEnded) {
           // Sync tone has ended: data transmission begins NOW!
           rxState = 'DATA';

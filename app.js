@@ -251,6 +251,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Green Confirmed State on Sender
   function applySenderGreenPositiveState(msgId, time) {
+    stopBeaconRetryLoop();
     const panelSender = document.getElementById("panelSender");
     const heading = document.getElementById("senderHeading");
     const modeBadge = document.getElementById("senderModeBadge");
@@ -260,21 +261,36 @@ document.addEventListener("DOMContentLoaded", () => {
     const txtName = document.getElementById("txtName");
     const voiceBox = document.getElementById("voiceModuleBox");
     const gpsBox = document.getElementById("gpsBox");
+    const btnInstantPanic = document.getElementById("btnInstantPanic");
+    const btnSend = document.getElementById("btnSend");
 
-    panelSender.className = "w-full bg-neutral-900 border-2 border-emerald-400 p-5 rounded-xl flex flex-col justify-between shadow-2xl transition-all duration-500";
-    heading.innerText = "✓ SOS ACKNOWLEDGED & CONFIRMED";
-    heading.className = "text-xs font-black text-emerald-400 tracking-widest uppercase transition-colors";
+    if (panelSender) panelSender.className = "w-full bg-neutral-900 border-2 border-emerald-400 p-5 rounded-xl flex flex-col justify-between shadow-2xl transition-all duration-500";
+    if (heading) {
+      heading.innerText = "✓ SOS ACKNOWLEDGED & CONFIRMED";
+      heading.className = "text-xs font-black text-emerald-400 tracking-widest uppercase transition-colors";
+    }
 
-    modeBadge.innerText = "HELP EN ROUTE";
-    modeBadge.className = "text-[9px] bg-emerald-400 text-black px-2 py-0.5 rounded font-bold uppercase tracking-wider transition-colors";
+    if (modeBadge) {
+      modeBadge.innerText = "STAND DOWN // RESCUE CONFIRMED";
+      modeBadge.className = "text-[9px] bg-emerald-400 text-black px-2 py-0.5 rounded font-bold uppercase tracking-wider transition-colors";
+    }
 
-    txtMessage.className = "w-full bg-neutral-950 border border-white/40 p-2.5 text-xs rounded-lg mt-1 text-white focus:outline-none focus:border-white transition";
+    if (btnInstantPanic) {
+      btnInstantPanic.innerHTML = `<span>✓</span> RESCUE DISPATCHED (CONFIRMED)`;
+      btnInstantPanic.className = "w-full bg-emerald-500 text-black font-black py-4 px-4 rounded-lg text-sm md:text-base tracking-widest shadow-xl flex items-center justify-center gap-2 uppercase transition-all duration-200";
+    }
+    if (btnSend) {
+      btnSend.innerText = `✓ DISTRESS CONFIRMED BY HQ`;
+      btnSend.className = "w-full bg-neutral-800 text-neutral-400 font-bold py-3 rounded-lg text-xs uppercase tracking-wider transition";
+    }
+
+    if (txtMessage) txtMessage.className = "w-full bg-neutral-950 border border-white/40 p-2.5 text-xs rounded-lg mt-1 text-white focus:outline-none focus:border-white transition";
     if (txtName) txtName.className = "w-full bg-neutral-950 border border-white/40 p-2.5 text-xs rounded-lg mt-1 text-white focus:outline-none focus:border-white transition";
-    voiceBox.className = "mb-3 bg-neutral-950 p-3 rounded-lg border border-white/40 transition-colors";
-    gpsBox.className = "mb-3 p-3 bg-neutral-950 rounded-lg border border-white/40 transition-colors font-mono";
+    if (voiceBox) voiceBox.className = "mb-3 bg-neutral-950 p-3 rounded-lg border border-white/40 transition-colors";
+    if (gpsBox) gpsBox.className = "mb-3 p-3 bg-neutral-950 rounded-lg border border-white/40 transition-colors font-mono";
 
-    ackTitle.innerText = `RESCUE CONFIRMED FOR BEACON #${msgId} AT ${time}`;
-    ackMsgBox.classList.remove("hidden");
+    if (ackTitle) ackTitle.innerText = `RESCUE CONFIRMED FOR BEACON #${msgId} AT ${time}`;
+    if (ackMsgBox) ackMsgBox.classList.remove("hidden");
   }
 
   function resetSenderInputs() {
@@ -554,7 +570,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 1-Tap Instant Panic Button with Immediate Non-Blocking Audio Output
   document.getElementById("btnInstantPanic").addEventListener("click", async () => {
-    await modem.initAudio();
+    // 1. Immediately request/start microphone within user gesture so sender can receive acoustic ACK!
+    await modem.startListening();
+    updateMicStatusUi();
+
     const btn = document.getElementById("btnInstantPanic");
     const originalHtml = btn.innerHTML;
     btn.innerHTML = `<span>🔊</span> BROADCASTING ACOUSTIC SOUND...`;
@@ -596,14 +615,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     btn.innerHTML = originalHtml;
 
-    // Auto-listen on microphone so sender can hear the Rescuer HQ ACK chime!
-    setTimeout(() => {
-      if (currentRole === 'sender') {
-        modem.startListening();
-        updateMicStatusUi();
-      }
-    }, 4000);
-
     // Refresh satellite fix in background
     getAccurateDeviceLocation().then(fresh => {
       if (fresh && activePendingPacket) {
@@ -618,7 +629,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Standard Transmit Action with Immediate Non-Blocking Audio Output
   document.getElementById("btnSend").addEventListener("click", async () => {
-    await modem.initAudio();
+    // Immediately start listening within touch gesture
+    await modem.startListening();
+    updateMicStatusUi();
+
     const btn = document.getElementById("btnSend");
     btn.innerText = "🔊 BROADCASTING ACOUSTIC SOUND...";
 
@@ -659,13 +673,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     btn.innerText = "📢 BROADCAST WITH NOTE / AUDIO";
 
-    setTimeout(() => {
-      if (currentRole === 'sender') {
-        modem.startListening();
-        updateMicStatusUi();
-      }
-    }, 4000);
-
     getAccurateDeviceLocation().then(fresh => {
       if (fresh && activePendingPacket) {
         activePendingPacket.lat = Number(fresh.lat);
@@ -693,7 +700,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnAcousticPing = document.getElementById("btnAcousticPing");
   if (btnAcousticPing) {
     btnAcousticPing.addEventListener("click", async () => {
-      await modem.initAudio();
+      await modem.startListening();
+      updateMicStatusUi();
       const pingId = Math.floor(1000 + Math.random() * 9000);
       btnAcousticPing.innerText = `📶 Sending Ping #${pingId}...`;
 
@@ -735,7 +743,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // 2. Check for Rescue ACK confirmation packet
     if (packet.type === 0xFF) {
       if (currentRole === 'sender') {
-        if (!myLastSentMsgId || String(packet.msgId) === String(myLastSentMsgId)) {
+        const isMyAck = !myLastSentMsgId 
+          || String(packet.msgId) === String(myLastSentMsgId)
+          || (activePendingPacket && String(packet.msgId) === String(activePendingPacket.msgId));
+
+        if (isMyAck) {
+          console.log(`✅ Rescue ACK confirmed for beacon #${packet.msgId}. Stopping distress retries.`);
           stopBeaconRetryLoop();
           document.getElementById("ackTime").innerText = currentTime;
           document.getElementById("ackTitle").innerText = `BASE STATION ACKNOWLEDGED DISTRESS BEACON #${packet.msgId}! HELP IS EN ROUTE.`;
@@ -792,8 +805,17 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
       `).openPopup();
 
-      // Pan & Zoom directly onto survivor coordinates
-      map.setView([validLat, validLon], 18);
+      // Pan & Zoom directly onto survivor coordinates or fit all active markers across different areas
+      try {
+        if (markersLayer.getLayers().length > 2) {
+          const group = L.featureGroup(markersLayer.getLayers());
+          map.fitBounds(group.getBounds().pad(0.2));
+        } else {
+          map.setView([validLat, validLon], 16);
+        }
+      } catch (e) {
+        map.setView([validLat, validLon], 16);
+      }
 
       // Add Card to Live Incident Feed
       const feed = document.getElementById("feed");
@@ -837,13 +859,14 @@ document.addEventListener("DOMContentLoaded", () => {
       const ackBtn = card.querySelector(".ack-btn");
       ackBtn.addEventListener("click", async () => {
         ackBtn.disabled = true;
+        await modem.initAudio();
         const ackBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
           ? PacketEngine.encodeAcoustic({ msgId: packet.msgId, type: 0xFF })
           : PacketEngine.encodeAck(packet.msgId);
         const ackTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
         await modem.transmitPacket(ackBytes);
-        broadcastMeshPacket({ msgId: packet.msgId, type: 0xFF, timestamp: ackTime });
+        broadcastMeshPacket({ msgId: packet.msgId, type: 0xFF, timestamp: ackTime, _room: packet._room });
 
         ackBtn.innerText = `✓ ACK DISPATCHED (${ackTime})`;
         ackBtn.className = "ack-btn flex-1 bg-neutral-800 text-neutral-500 font-bold py-1.5 px-3 rounded cursor-not-allowed";

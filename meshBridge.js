@@ -16,8 +16,8 @@ class SilentBridgeMesh {
 
     // Public Secure WebSocket MQTT Brokers (Works globally across HTTPS/Vercel with zero backend)
     this.activeBrokers = [
-      { host: 'broker.emqx.io', port: 8084, path: '/mqtt', name: 'EMQX Cloud Mesh' },
-      { host: 'broker.hivemq.com', port: 8884, path: '/mqtt', name: 'HiveMQ Cloud Mesh' }
+      { host: 'broker.hivemq.com', port: 8884, path: '/mqtt', name: 'HiveMQ Cloud Mesh' },
+      { host: 'broker.emqx.io', port: 8084, path: '/mqtt', name: 'EMQX Cloud Mesh' }
     ];
     this.currentBrokerIndex = 0;
 
@@ -83,6 +83,20 @@ class SilentBridgeMesh {
 
   setRole(newRole) {
     this.role = newRole;
+    if (this.mqttClient && this.cloudConnected) {
+      if (this.role === 'receiver') {
+        try {
+          this.mqttClient.subscribe('silentbridge/v2/#', {
+            onSuccess: () => console.log("Subscribed HQ to wildcard silentbridge/v2/#")
+          });
+        } catch (e) {}
+      } else {
+        try {
+          this.mqttClient.subscribe(`silentbridge/v2/${this.roomCode}`);
+          this.mqttClient.subscribe('silentbridge/v2/GLOBAL');
+        } catch (e) {}
+      }
+    }
     this.sendPing();
   }
 
@@ -117,16 +131,21 @@ class SilentBridgeMesh {
         this.mqttClient.unsubscribe(oldTopic);
       } catch (e) {}
 
-      const newTopic = `silentbridge/v2/${this.roomCode}`;
-      try {
-        this.mqttClient.subscribe(newTopic, {
-          onSuccess: () => {
-            console.log(`Subscribed to new mesh topic: ${newTopic}`);
-            this.notifyStatus('connected', `Switched to room #${this.roomCode}`);
-            this.sendPing();
-          }
-        });
-      } catch (e) {}
+      const topics = (this.role === 'receiver')
+        ? ['silentbridge/v2/#']
+        : [`silentbridge/v2/${this.roomCode}`, 'silentbridge/v2/GLOBAL'];
+
+      topics.forEach(t => {
+        try {
+          this.mqttClient.subscribe(t, {
+            onSuccess: () => {
+              console.log(`Subscribed to mesh topic: ${t}`);
+              this.notifyStatus('connected', `Switched to room #${this.roomCode}`);
+              this.sendPing();
+            }
+          });
+        } catch (e) {}
+      });
     }
 
     this.peers.clear();
@@ -193,17 +212,22 @@ class SilentBridgeMesh {
         cleanSession: true,
         onSuccess: () => {
           this.cloudConnected = true;
-          const topic = `silentbridge/v2/${this.roomCode}`;
-          this.mqttClient.subscribe(topic, {
-            onSuccess: () => {
-              console.log(`✅ Cloud Mesh active on ${broker.name} [Room: #${this.roomCode}]`);
-              this.notifyStatus('connected', `Mesh Online: Connected to ${broker.name}`);
-              this.sendPing();
-            },
-            onFailure: (err) => {
-              console.warn("Failed to subscribe to MQTT topic:", err);
-            }
+          // Rescuer HQ subscribes to wildcard silentbridge/v2/#; Senders subscribe to their room and GLOBAL
+          const topics = (this.role === 'receiver')
+            ? ['silentbridge/v2/#']
+            : [`silentbridge/v2/${this.roomCode}`, 'silentbridge/v2/GLOBAL'];
+
+          topics.forEach(t => {
+            this.mqttClient.subscribe(t, {
+              qos: 0,
+              onSuccess: () => console.log(`✅ Subscribed to ${t}`),
+              onFailure: (err) => console.warn(`Failed subscribe ${t}:`, err)
+            });
           });
+
+          console.log(`✅ Cloud Mesh active on ${broker.name} [Room: #${this.roomCode}]`);
+          this.notifyStatus('connected', `Mesh Online: Connected to ${broker.name}`);
+          this.sendPing();
         },
         onFailure: (err) => {
           this.cloudConnected = false;
@@ -309,11 +333,20 @@ class SilentBridgeMesh {
     // 2. Cloud Mesh MQTT (Cross-Device across anywhere in the world)
     if (this.mqttClient && this.cloudConnected) {
       try {
-        const topic = `silentbridge/v2/${this.roomCode}`;
+        const targetRoom = packetObj._room || this.roomCode || 'GLOBAL';
+        const topic = `silentbridge/v2/${targetRoom}`;
         const message = new Paho.MQTT.Message(payloadString);
         message.destinationName = topic;
-        message.qos = isInternal ? 0 : 1;
+        message.qos = 0;
         this.mqttClient.send(message);
+
+        // Also broadcast to GLOBAL so any general rescuer or scanner picks it up
+        if (targetRoom !== 'GLOBAL' && !isInternal) {
+          const globalMsg = new Paho.MQTT.Message(payloadString);
+          globalMsg.destinationName = 'silentbridge/v2/GLOBAL';
+          globalMsg.qos = 0;
+          this.mqttClient.send(globalMsg);
+        }
       } catch (e) {
         console.warn("MQTT send packet error:", e);
       }
@@ -335,8 +368,17 @@ class SilentBridgeMesh {
     // Reject echo packets sent by this exact device
     if (packetObj._senderDevice === this.deviceId) return;
 
-    // Filter by room code if packet has room
-    if (packetObj._room && packetObj._room !== this.roomCode) return;
+    // Filter by room code:
+    // - Receivers (Rescue HQ) accept packets from ALL rooms/areas!
+    // - ACKs (0xFF) and Test Pings (0xFD) are accepted across all rooms!
+    // - Packets sent to or from 'GLOBAL' are accepted by everyone!
+    const isReceiver = this.role === 'receiver';
+    const isAckOrPing = packetObj.type === 0xFF || packetObj.type === 0xFD || packetObj.isTest;
+    const isGlobal = !packetObj._room || packetObj._room === 'GLOBAL' || this.roomCode === 'GLOBAL';
+
+    if (!isReceiver && !isAckOrPing && !isGlobal && packetObj._room !== this.roomCode) {
+      return;
+    }
 
     // Handle Heartbeat / Ping
     if (packetObj.type === 0xFE || packetObj.isHeartbeat) {
