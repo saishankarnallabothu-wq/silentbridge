@@ -323,13 +323,15 @@ class SilentBridgeMesh {
     // 2. Cloud Mesh MQTT (Cross-Device across anywhere in the world)
     if (this.mqttClient && this.cloudConnected) {
       try {
-        // Support voice audio memos up to 200KB over WSS MQTT
+        // Support voice audio memos up to 48KB over WSS MQTT (safe for HiveMQ & EMQX broker WebSocket frames)
         const mqttPacket = { ...packetObj };
-        if (mqttPacket.voiceAudio && mqttPacket.voiceAudio.length > 200000) {
+        if (mqttPacket.voiceAudio && mqttPacket.voiceAudio.length > 48000) {
+          console.warn("voiceAudio exceeds 48KB MQTT frame safety threshold, flagging hasVoice:", mqttPacket.voiceAudio.length);
           mqttPacket.hasVoice = true;
           mqttPacket.voiceAudio = null;
         }
-        if (mqttPacket.ackVoiceAudio && mqttPacket.ackVoiceAudio.length > 200000) {
+        if (mqttPacket.ackVoiceAudio && mqttPacket.ackVoiceAudio.length > 48000) {
+          console.warn("ackVoiceAudio exceeds 48KB MQTT frame safety threshold, flagging hasAckVoice:", mqttPacket.ackVoiceAudio.length);
           mqttPacket.hasAckVoice = true;
           mqttPacket.ackVoiceAudio = null;
         }
@@ -389,10 +391,27 @@ class SilentBridgeMesh {
       return;
     }
 
-    // Deduplicate incoming SOS / ACK packets
+    // Deduplicate incoming SOS / ACK packets, BUT permit voice enrichment
     const packetKey = `${packetObj.msgId || '0'}_${packetObj.type}_${packetObj.isTest ? 'test' : 'sos'}`;
-    if (this.seenPacketIds.has(packetKey)) return;
+    const hasVoice = Boolean(packetObj.voiceAudio || packetObj.ackVoiceAudio);
+    if (!this.seenPacketsWithVoice) this.seenPacketsWithVoice = new Set();
+
+    if (this.seenPacketIds.has(packetKey)) {
+      // If previous packet arrived without voice, but this one has voice, forward it to app!
+      if (hasVoice && !this.seenPacketsWithVoice.has(packetKey)) {
+        this.seenPacketsWithVoice.add(packetKey);
+        console.log(`🎙️ MeshBridge: Passing voice-enriched packet #${packetObj.msgId} to application handler.`);
+        if (this.onPacket) {
+          this.onPacket(packetObj, transport);
+        }
+      }
+      return;
+    }
+
     this.seenPacketIds.add(packetKey);
+    if (hasVoice) {
+      this.seenPacketsWithVoice.add(packetKey);
+    }
 
     if (this.seenPacketIds.size > 200) {
       const first = this.seenPacketIds.values().next().value;

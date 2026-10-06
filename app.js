@@ -23,6 +23,9 @@ document.addEventListener("DOMContentLoaded", () => {
   let senderVoiceBase64 = null;
   let isRecording = false;
   let recordTimerInterval = null;
+  let isVoiceProcessing = false;
+  let voiceRecordResolvePromise = null;
+  let voiceRecordingMicStream = null;
 
   // Web Audio Context
   let audioContext = null;
@@ -570,6 +573,128 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ==========================================
+  // 🎙️ UNIVERSAL AUDIO DOWNSAMPLER & COMPRESSOR
+  // ==========================================
+  // Ensures voice audio payload is < 30KB binary (< 40,000 Base64 chars)
+  // for guaranteed, zero-drop delivery across MQTT WebSocket brokers worldwide.
+  async function downsampleAudioBlob(blob, targetRate = 8000) {
+    if (!blob || blob.size <= 26000) return blob;
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return blob;
+      const ctx = new AudioCtx();
+      const decodedBuffer = await ctx.decodeAudioData(arrayBuffer);
+
+      const channelData = decodedBuffer.getChannelData(0);
+      const sourceRate = decodedBuffer.sampleRate;
+      const ratio = sourceRate / targetRate;
+      // Cap at 3.5 seconds maximum (28,000 samples at 8kHz)
+      const targetLength = Math.min(Math.floor(channelData.length / ratio), Math.floor(targetRate * 3.5));
+
+      // Build 8-bit Mono PCM WAV (ITU-T standard speech, 8KB/s, universally playable in all browsers)
+      const dataSize = targetLength;
+      const wavBytes = new Uint8Array(44 + dataSize);
+      const view = new DataView(wavBytes.buffer);
+
+      view.setUint32(0, 0x52494646, false); // "RIFF"
+      view.setUint32(4, 36 + dataSize, true);
+      view.setUint32(8, 0x57415645, false); // "WAVE"
+      view.setUint32(12, 0x666d7420, false); // "fmt "
+      view.setUint32(16, 16, true);          // 16 for PCM
+      view.setUint16(20, 1, true);           // PCM format
+      view.setUint16(22, 1, true);           // Mono (1 channel)
+      view.setUint32(24, targetRate, true);  // 8000 Hz
+      view.setUint32(28, targetRate, true);  // Byte rate (8000 * 1 * 1)
+      view.setUint16(32, 1, true);           // Block align
+      view.setUint16(34, 8, true);           // 8-bit depth
+      view.setUint32(36, 0x64617461, false); // "data"
+      view.setUint32(40, dataSize, true);
+
+      let offset = 44;
+      for (let i = 0; i < targetLength; i++) {
+        const srcIdx = i * ratio;
+        const idx0 = Math.floor(srcIdx);
+        const idx1 = Math.min(idx0 + 1, channelData.length - 1);
+        const frac = srcIdx - idx0;
+        const sample = channelData[idx0] * (1 - frac) + channelData[idx1] * frac;
+        const clamped = Math.max(-1, Math.min(1, sample));
+        // 8-bit unsigned PCM: 128 is center/silence
+        const uint8 = Math.floor((clamped + 1) * 127.5);
+        wavBytes[offset++] = Math.max(0, Math.min(255, uint8));
+      }
+
+      ctx.close().catch(() => {});
+      console.log(`🎙️ Compressed voice memo: raw ${blob.size}B -> WAV ${wavBytes.length}B (Base64 ~${Math.ceil(wavBytes.length * 4 / 3)} chars)`);
+      return new Blob([wavBytes], { type: 'audio/wav' });
+    } catch (e) {
+      console.warn("Audio downsampling note:", e);
+      return blob;
+    }
+  }
+
+  // Auto-finalize any active voice recording before broadcast dispatch
+  function stopVoiceRecording(onCompletedCallback) {
+    if (recordTimerInterval) {
+      clearInterval(recordTimerInterval);
+      recordTimerInterval = null;
+    }
+    const btnRecordVoice = document.getElementById("btnRecordVoice");
+    const recordTimer = document.getElementById("recordTimer");
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      try {
+        mediaRecorder.stop();
+      } catch (e) {
+        console.warn("mediaRecorder stop note:", e);
+      }
+    }
+    isRecording = false;
+    if (voiceRecordingMicStream) {
+      try {
+        voiceRecordingMicStream.getTracks().forEach(t => t.stop());
+      } catch (e) {}
+      voiceRecordingMicStream = null;
+    }
+    if (btnRecordVoice) {
+      btnRecordVoice.innerText = "🔄 Re-Record Voice";
+      btnRecordVoice.className = "bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold py-2 px-3 rounded-md flex items-center gap-1.5 transition";
+    }
+    if (recordTimer) recordTimer.innerText = "00:04";
+    if (typeof onCompletedCallback === 'function') {
+      voiceRecordResolvePromise = onCompletedCallback;
+    }
+  }
+
+  async function finishAnyActiveVoiceRecording() {
+    if (isRecording) {
+      console.log("🎙️ BROADCAST triggered while recording - automatically finalizing voice memo...");
+      const btnRecordVoice = document.getElementById("btnRecordVoice");
+      if (btnRecordVoice) {
+        btnRecordVoice.innerText = "⏳ Attaching Voice...";
+      }
+      return new Promise((resolve) => {
+        stopVoiceRecording((base64) => {
+          resolve(base64);
+        });
+        setTimeout(() => resolve(senderVoiceBase64), 2000);
+      });
+    }
+    if (isVoiceProcessing) {
+      console.log("🎙️ Voice memo processing in progress - awaiting base64 encoding...");
+      return new Promise((resolve) => {
+        const waitInterval = setInterval(() => {
+          if (!isVoiceProcessing) {
+            clearInterval(waitInterval);
+            resolve(senderVoiceBase64);
+          }
+        }, 50);
+        setTimeout(() => { clearInterval(waitInterval); resolve(senderVoiceBase64); }, 2000);
+      });
+    }
+    return senderVoiceBase64;
+  }
+
+  // ==========================================
   // 🎙️ SURVIVOR SITUATIONAL VOICE RECORDING
   // ==========================================
   function setupVoiceRecorder() {
@@ -587,42 +712,63 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!isRecording) {
         recordedChunks = [];
         try {
-          const stream = modem.micStream || await navigator.mediaDevices.getUserMedia({ audio: true });
+          // Clean, dedicated microphone stream for recording
+          voiceRecordingMicStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+              channelCount: 1
+            }
+          });
+
           let recorderOptions = {};
           if (typeof MediaRecorder !== 'undefined') {
             if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-              recorderOptions = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 24000 };
+              recorderOptions = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 16000 };
             } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-              recorderOptions = { mimeType: 'audio/webm', audioBitsPerSecond: 24000 };
+              recorderOptions = { mimeType: 'audio/webm', audioBitsPerSecond: 16000 };
             } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
               recorderOptions = { mimeType: 'audio/mp4', audioBitsPerSecond: 24000 };
+            } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+              recorderOptions = { mimeType: 'audio/ogg', audioBitsPerSecond: 16000 };
             }
           }
-          mediaRecorder = new MediaRecorder(stream, recorderOptions);
+          mediaRecorder = new MediaRecorder(voiceRecordingMicStream, recorderOptions);
         } catch (micErr) {
           console.warn("Voice recorder mic error:", micErr);
-          if (recordStatus) recordStatus.innerText = "Microphone access denied.";
+          if (recordStatus) {
+            recordStatus.innerText = "Microphone access denied. Please grant microphone permission.";
+            recordStatus.className = "text-[10px] text-red-400 font-bold mt-1.5";
+          }
           return;
         }
 
         mediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) recordedChunks.push(e.data);
+          if (e.data && e.data.size > 0) recordedChunks.push(e.data);
         };
 
-        mediaRecorder.onstop = () => {
+        mediaRecorder.onstop = async () => {
+          isVoiceProcessing = true;
           const mime = (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
-          const blob = new Blob(recordedChunks, { type: mime });
-          const audioURL = URL.createObjectURL(blob);
-          if (audioPreview) {
-            audioPreview.src = audioURL;
-            audioPreview.classList.remove("hidden");
+          let blob = new Blob(recordedChunks, { type: mime });
+
+          // Auto-downsample if blob exceeds 26KB so Base64 stays safely below 40,000 chars
+          if (blob.size > 26000) {
+            blob = await downsampleAudioBlob(blob, 8000);
           }
 
           const reader = new FileReader();
           reader.readAsDataURL(blob);
           reader.onloadend = () => {
             senderVoiceBase64 = reader.result;
+            isVoiceProcessing = false;
+
             const recordTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            if (audioPreview) {
+              audioPreview.src = senderVoiceBase64;
+              audioPreview.classList.remove("hidden");
+            }
             if (recordStatus) {
               recordStatus.innerText = `✓ Voice note recorded at ${recordTimestamp} and attached to SOS.`;
               recordStatus.className = "text-[10px] text-emerald-300 font-bold mt-1.5";
@@ -630,15 +776,21 @@ document.addEventListener("DOMContentLoaded", () => {
             if (voiceAttachedBadge) voiceAttachedBadge.classList.remove("hidden");
             if (btnClearVoice) btnClearVoice.classList.remove("hidden");
             TacticalSpeech.speak("Voice memo attached to emergency beacon.");
+
+            if (voiceRecordResolvePromise) {
+              const cb = voiceRecordResolvePromise;
+              voiceRecordResolvePromise = null;
+              cb(senderVoiceBase64);
+            }
           };
         };
 
-        mediaRecorder.start();
+        mediaRecorder.start(250);
         isRecording = true;
-        btnRecordVoice.innerText = "⏹️ Stop Recording";
+        btnRecordVoice.innerText = "⏹️ Stop Recording (4s)";
         btnRecordVoice.className = "bg-red-500 text-white text-xs font-bold py-2 px-3 rounded-md flex items-center gap-1.5 transition animate-pulse";
         if (recordStatus) {
-          recordStatus.innerText = "Recording voice memo (max 5s)... Speak clearly.";
+          recordStatus.innerText = "Recording voice memo (max 4s)... Speak clearly.";
           recordStatus.className = "text-[10px] text-amber-300 font-bold mt-1.5 animate-pulse";
         }
 
@@ -646,20 +798,12 @@ document.addEventListener("DOMContentLoaded", () => {
         recordTimerInterval = setInterval(() => {
           seconds++;
           if (recordTimer) recordTimer.innerText = `00:0${seconds}`;
-          if (seconds >= 5) {
-            if (isRecording) btnRecordVoice.click();
+          if (seconds >= 4) {
+            stopVoiceRecording();
           }
         }, 1000);
       } else {
-        try {
-          if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-            mediaRecorder.stop();
-          }
-        } catch (e) {}
-        isRecording = false;
-        clearInterval(recordTimerInterval);
-        btnRecordVoice.innerText = "🔄 Re-Record Voice";
-        btnRecordVoice.className = "bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold py-2 px-3 rounded-md flex items-center gap-1.5 transition";
+        stopVoiceRecording();
       }
     });
 
@@ -674,8 +818,8 @@ document.addEventListener("DOMContentLoaded", () => {
         btnClearVoice.classList.add("hidden");
         if (voiceAttachedBadge) voiceAttachedBadge.classList.add("hidden");
         if (recordStatus) {
-          recordStatus.innerText = "Record a 5-second situational voice clip.";
-          recordStatus.className = "text-[10px] text-neutral-500 mt-1.5";
+          recordStatus.innerText = "Record a situational voice clip to attach to your SOS.";
+          recordStatus.className = "text-[10px] text-neutral-400 mt-1.5";
         }
         if (recordTimer) recordTimer.innerText = "00:00";
         btnRecordVoice.innerText = "🎙️ Record Voice Note";
@@ -693,6 +837,41 @@ document.addEventListener("DOMContentLoaded", () => {
   let rescuerRecordedChunks = [];
   let isRescuerRecording = false;
   let rescuerRecordTimerInterval = null;
+  let rescuerMicStream = null;
+  let rescuerVoiceResolvePromise = null;
+
+  function stopRescuerVoiceRecording(onCompletedCallback) {
+    if (rescuerRecordTimerInterval) {
+      clearInterval(rescuerRecordTimerInterval);
+      rescuerRecordTimerInterval = null;
+    }
+    const btnRecord = document.getElementById("btnRecordRescuerVoice");
+    if (rescuerMediaRecorder && rescuerMediaRecorder.state !== 'inactive') {
+      try { rescuerMediaRecorder.stop(); } catch (e) {}
+    }
+    isRescuerRecording = false;
+    if (rescuerMicStream) {
+      try { rescuerMicStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+      rescuerMicStream = null;
+    }
+    if (btnRecord) {
+      btnRecord.innerText = "🔄 Re-Record Instruction";
+      btnRecord.className = "bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold py-1.5 px-3 rounded-md flex items-center gap-1.5 border border-white/30 transition";
+    }
+    if (typeof onCompletedCallback === 'function') {
+      rescuerVoiceResolvePromise = onCompletedCallback;
+    }
+  }
+
+  async function finishAnyActiveRescuerVoiceRecording() {
+    if (isRescuerRecording) {
+      return new Promise((resolve) => {
+        stopRescuerVoiceRecording((base64) => resolve(base64));
+        setTimeout(() => resolve(rescuerVoiceBase64), 2000);
+      });
+    }
+    return rescuerVoiceBase64;
+  }
 
   function setupRescuerVoiceRecorder() {
     const btnRecord = document.getElementById("btnRecordRescuerVoice");
@@ -708,45 +887,57 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!isRescuerRecording) {
         rescuerRecordedChunks = [];
         try {
-          const stream = modem.micStream || await navigator.mediaDevices.getUserMedia({ audio: true });
+          rescuerMicStream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }
+          });
           let recorderOptions = {};
           if (typeof MediaRecorder !== 'undefined') {
             if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-              recorderOptions = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 24000 };
+              recorderOptions = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 16000 };
             } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-              recorderOptions = { mimeType: 'audio/webm', audioBitsPerSecond: 24000 };
+              recorderOptions = { mimeType: 'audio/webm', audioBitsPerSecond: 16000 };
+            } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+              recorderOptions = { mimeType: 'audio/mp4', audioBitsPerSecond: 24000 };
             }
           }
-          rescuerMediaRecorder = new MediaRecorder(stream, recorderOptions);
+          rescuerMediaRecorder = new MediaRecorder(rescuerMicStream, recorderOptions);
         } catch (e) {
           console.warn("Rescuer mic access note:", e);
           return;
         }
 
         rescuerMediaRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) rescuerRecordedChunks.push(e.data);
+          if (e.data && e.data.size > 0) rescuerRecordedChunks.push(e.data);
         };
 
-        rescuerMediaRecorder.onstop = () => {
+        rescuerMediaRecorder.onstop = async () => {
           const mime = (rescuerMediaRecorder && rescuerMediaRecorder.mimeType) || 'audio/webm';
-          const blob = new Blob(rescuerRecordedChunks, { type: mime });
-          const audioURL = URL.createObjectURL(blob);
-          if (preview) {
-            preview.src = audioURL;
-            preview.classList.remove("hidden");
+          let blob = new Blob(rescuerRecordedChunks, { type: mime });
+          if (blob.size > 26000) {
+            blob = await downsampleAudioBlob(blob, 8000);
           }
 
           const reader = new FileReader();
           reader.readAsDataURL(blob);
           reader.onloadend = () => {
             rescuerVoiceBase64 = reader.result;
+            if (preview) {
+              preview.src = rescuerVoiceBase64;
+              preview.classList.remove("hidden");
+            }
             if (badge) badge.classList.remove("hidden");
             if (btnClear) btnClear.classList.remove("hidden");
             TacticalSpeech.speak("Rescuer voice instruction attached to ACK.");
+
+            if (rescuerVoiceResolvePromise) {
+              const cb = rescuerVoiceResolvePromise;
+              rescuerVoiceResolvePromise = null;
+              cb(rescuerVoiceBase64);
+            }
           };
         };
 
-        rescuerMediaRecorder.start();
+        rescuerMediaRecorder.start(250);
         isRescuerRecording = true;
         btnRecord.innerText = "⏹️ Stop (Recording)";
         btnRecord.className = "bg-red-500 text-white text-xs font-bold py-1.5 px-3 rounded-md flex items-center gap-1.5 animate-pulse";
@@ -755,20 +946,12 @@ document.addEventListener("DOMContentLoaded", () => {
         rescuerRecordTimerInterval = setInterval(() => {
           seconds++;
           if (timer) timer.innerText = `00:0${seconds}`;
-          if (seconds >= 5) {
-            if (isRescuerRecording) btnRecord.click();
+          if (seconds >= 4) {
+            stopRescuerVoiceRecording();
           }
         }, 1000);
       } else {
-        try {
-          if (rescuerMediaRecorder && rescuerMediaRecorder.state !== 'inactive') {
-            rescuerMediaRecorder.stop();
-          }
-        } catch (e) {}
-        isRescuerRecording = false;
-        clearInterval(rescuerRecordTimerInterval);
-        btnRecord.innerText = "🔄 Re-Record Instruction";
-        btnRecord.className = "bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold py-1.5 px-3 rounded-md flex items-center gap-1.5 border border-white/30 transition";
+        stopRescuerVoiceRecording();
       }
     });
 
@@ -783,7 +966,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btnClear.classList.add("hidden");
         if (badge) badge.classList.add("hidden");
         if (timer) timer.innerText = "00:00";
-        btnRecord.innerText = "🎙️ Record Instruction (5s)";
+        btnRecord.innerText = "🎙️ Record Instruction (4s)";
       });
     }
   }
@@ -948,6 +1131,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // ==========================================
   async function executeSosDispatch({ isPanic = false, customNote = null, customType = null } = {}) {
     await modem.initAudio();
+
+    // 🎙️ Automatically finalize any active voice recording or pending conversion
+    const attachedVoice = await finishAnyActiveVoiceRecording();
+
     if (currentRole === 'sender') {
       await modem.startListening();
       updateMicStatusUi();
@@ -968,6 +1155,9 @@ document.addEventListener("DOMContentLoaded", () => {
     myLastSentMsgId = generatedId;
     try { sessionStorage.setItem("silentbridge_last_msg_id", String(generatedId)); } catch (e) {}
 
+    // Attach voice recording memo (ensuring base64 is captured and ready)
+    const voicePayload = attachedVoice || senderVoiceBase64 || null;
+
     // Packet ALWAYS preserves survivor's recorded voice note if available!
     const packetObj = {
       msgId: generatedId,
@@ -978,10 +1168,12 @@ document.addEventListener("DOMContentLoaded", () => {
       accuracy: Number(loc.accuracy),
       ttl: 3,
       text: text,
-      voiceAudio: senderVoiceBase64 || null,
+      voiceAudio: voicePayload,
       timestamp: sentTime,
       isPanic: isPanic
     };
+
+    console.log(`📢 Prepared SOS packet #${generatedId}. Voice attached: ${Boolean(voicePayload)} (${voicePayload ? voicePayload.length : 0} chars)`);
 
     const acousticBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
       ? PacketEngine.encodeAcoustic(packetObj)
@@ -1028,11 +1220,18 @@ document.addEventListener("DOMContentLoaded", () => {
   // Standard Transmit Action with Immediate Non-Blocking Audio Output
   document.getElementById("btnSend").addEventListener("click", async () => {
     const btn = document.getElementById("btnSend");
-    btn.innerText = "🔊 BROADCASTING ACOUSTIC SOUND...";
+    btn.disabled = true;
+    const hasVoice = Boolean(senderVoiceBase64 || isRecording);
+    btn.innerText = hasVoice
+      ? "🔊 BROADCASTING WITH VOICE MEMO..."
+      : "🔊 BROADCASTING ACOUSTIC SOUND...";
 
-    await executeSosDispatch({ isPanic: false });
-
-    btn.innerText = "📢 BROADCAST WITH NOTE / AUDIO";
+    try {
+      await executeSosDispatch({ isPanic: false });
+    } finally {
+      btn.disabled = false;
+      btn.innerText = "📢 BROADCAST WITH NOTE / AUDIO";
+    }
   });
 
   // Offline Acoustic Test Controls
@@ -1131,15 +1330,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // 2. Multi-Transport Cloud Mesh MQTT (Worldwide over any distance)
+    const attachedRescuerVoice = await finishAnyActiveRescuerVoiceRecording();
+    const rescuerPayload = attachedRescuerVoice || rescuerVoiceBase64 || null;
+
     broadcastMeshPacket({
       msgId: msgId,
       type: 0xFF,
       isBroadcast: isBroadcast,
       timestamp: ackTime,
       _room: targetRoom,
-      ackVoiceAudio: rescuerVoiceBase64 || null
+      ackVoiceAudio: rescuerPayload
     });
-    console.log(`🌐 Mesh ACK packet broadcasted for ${labelId} (Room: #${targetRoom})`);
+    console.log(`🌐 Mesh ACK packet broadcasted for ${labelId} (Room: #${targetRoom}). Rescuer voice attached: ${Boolean(rescuerPayload)}`);
     TacticalSpeech.speak(`Rescue ACK dispatched for ${labelId}. Help is confirmed.`, false);
 
     // 3. Synchronize All UI Elements
@@ -1260,190 +1462,294 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // 3. Deduplicate SOS packet
-    if (seenMessages.has(packet.msgId)) return;
-    seenMessages.add(packet.msgId);
+  // Helper to dynamically inject or update survivor voice memo in Rescuer UI
+  function enrichRescuerUiWithVoice(packet) {
+    if (!packet || !packet.voiceAudio) return;
+    const survivorName = packet.name || "Survivor";
+    const currentTime = packet.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-    // 4. Handle incoming SOS on Rescue HQ
-    if (currentRole === 'receiver') {
-      latestDetectedSosPacket = packet;
-      playEmergencyAlertSound();
-
-      const typeNames = { 1: "Medical", 2: "Trapped", 3: "Fire", 4: "Flood" };
-      const typeName = packet.isPanic ? "CRITICAL PANIC" : (typeNames[packet.type] || "Distress");
-
-      const validLat = Number(packet.lat) || 17.3850;
-      const validLon = Number(packet.lon) || 78.4867;
-      const validAcc = Number(packet.accuracy) || 15;
-
-      // Tactical Voice Announcement on HQ
-      TacticalSpeech.speak(`Emergency alert. Distress beacon received from ${survivorName}. Incident type: ${typeName}. Coordinates plotted.`);
-
-      // Update Target Beacon ID Input in Console
-      const txtBeaconId = document.getElementById("txtTargetBeaconId");
-      if (txtBeaconId) txtBeaconId.value = packet.msgId;
-
-      // Update Empty State in Feed
-      const emptyFeed = document.getElementById("feedEmptyState");
-      if (emptyFeed) emptyFeed.classList.add("hidden");
-
-      // Update Top Alert Banner
-      document.getElementById("sosTime").innerText = currentTime;
-      document.getElementById("sosTitle").innerText = `🚨 ${typeName.toUpperCase()} FROM ${survivorName.toUpperCase()} (#${packet.msgId})!`;
-      document.getElementById("sosSubtitle").innerText = `GPS: ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)`;
-      sosBanner.classList.remove("hidden");
-
-      // Update Top Banner Voice Memo
-      const bannerVoiceSec = document.getElementById("bannerVoiceSection");
-      const bannerVoiceAudio = document.getElementById("bannerVoiceAudio");
-      if (bannerVoiceSec && bannerVoiceAudio) {
-        if (packet.voiceAudio) {
-          bannerVoiceAudio.src = packet.voiceAudio;
-          bannerVoiceSec.classList.remove("hidden");
-        } else {
-          bannerVoiceSec.classList.add("hidden");
-        }
-      }
-
-      if (btnBannerSendAck) {
-        btnBannerSendAck.disabled = false;
-        btnBannerSendAck.innerHTML = `<span>🛡️</span> SEND RESCUE ACK ➔`;
-        btnBannerSendAck.className = "bg-emerald-400 hover:bg-emerald-300 text-black font-black text-xs px-3.5 py-2 rounded-lg transition uppercase tracking-wider flex items-center gap-1.5 shadow-xl active:scale-95";
-      }
-
-      // Update Rescue ACK Console Status & Button
-      const mainBtn = document.getElementById("btnMainDispatchAck");
-      if (mainBtn) {
-        mainBtn.innerHTML = `<span>🛡️</span> SEND RESCUE ACK TO ${survivorName.toUpperCase()} (#${packet.msgId}) ➔`;
-      }
-
-      const beaconSummaryEl = document.getElementById("latestBeaconSummary");
-      if (beaconSummaryEl) {
-        beaconSummaryEl.innerText = `ACTIVE BEACON #${packet.msgId} (${survivorName}) - Lat: ${validLat.toFixed(5)}, Lon: ${validLon.toFixed(5)}`;
-        beaconSummaryEl.className = "bg-neutral-900 border border-emerald-400/50 p-2 rounded text-[11px] text-emerald-300 font-mono font-bold truncate animate-pulse";
-      }
-
-      const logEl = document.getElementById("ackDispatchLog");
-      if (logEl) {
-        logEl.innerText = `ALERT: Distress beacon #${packet.msgId} detected. Ready to transmit Rescue ACK.`;
-        logEl.className = "text-[10px] text-amber-300 font-mono bg-neutral-900/80 p-2 rounded border border-amber-400/30";
-      }
-
-      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-
-      const googleMapsNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${validLat},${validLon}`;
-
-      // Add High-Precision Map Marker (safely checks if Leaflet is available offline)
-      if (typeof L !== 'undefined' && map && markersLayer) {
-        try {
-          const marker = L.marker([validLat, validLon]).addTo(markersLayer);
-          L.circle([validLat, validLon], {
-            color: '#10b981',
-            fillColor: '#10b981',
-            fillOpacity: 0.25,
-            radius: validAcc
-          }).addTo(markersLayer);
-
-          marker.bindPopup(`
-            <div class="font-mono text-xs text-black">
-              <b>${packet.isPanic ? '🚨 CRITICAL PANIC' : 'SOS Beacon'} #${packet.msgId}</b><br>
-              <span><b>Survivor:</b> ${survivorName}</span><br>
-              <span><b>Time:</b> ${currentTime}</span><br>
-              <span><b>GPS:</b> ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)</span><br>
-              ${packet.voiceAudio ? '<span style="color:#059669; font-weight:bold;">🎙️ Situational Voice Memo Attached</span><br>' : ''}
-              <a href="${googleMapsNavUrl}" target="_blank" style="color: #0066cc; text-decoration: underline; font-weight: bold; margin-top: 4px; display: inline-block;">🗺️ Open Turn-by-Turn Route</a>
-              <button id="btnMapPopupAck_${packet.msgId}" style="margin-top: 8px; width: 100%; background: #10b981; color: black; font-weight: 900; padding: 6px 10px; border-radius: 6px; border: none; cursor: pointer; text-transform: uppercase;">
-                🛡️ SEND RESCUE ACK ➔
-              </button>
-            </div>
-          `).openPopup();
-
-          marker.on('popupopen', () => {
-            const popupAckBtn = document.getElementById(`btnMapPopupAck_${packet.msgId}`);
-            if (popupAckBtn) {
-              popupAckBtn.onclick = () => dispatchRescueAck(packet, popupAckBtn);
-            }
-          });
-
-          // Pan & Zoom directly onto survivor coordinates or fit all active markers across different areas
-          if (markersLayer.getLayers().length > 2) {
-            const group = L.featureGroup(markersLayer.getLayers());
-            map.fitBounds(group.getBounds().pad(0.2));
-          } else {
-            map.setView([validLat, validLon], 16);
-          }
-        } catch (mapErr) {
-          console.warn("Leaflet marker placement note:", mapErr);
-        }
-      }
-
-      // Add Card to Live Incident Feed
-      const feed = document.getElementById("feed");
-      const card = document.createElement("div");
-      card.className = packet.isPanic 
-        ? "bg-neutral-900 border-2 border-red-500 p-3.5 rounded-lg shadow-xl text-xs flex flex-col gap-2"
-        : "bg-neutral-900 border-l-4 border-emerald-400 p-3.5 rounded-lg shadow-lg text-xs flex flex-col gap-2";
-
-      let voicePlayerHtml = '';
-      if (packet.voiceAudio) {
-        voicePlayerHtml = `
-          <div class="bg-black p-2.5 rounded-lg border border-emerald-400/50 flex flex-col gap-1.5 shadow-inner">
-            <div class="flex justify-between items-center">
-              <span class="text-[10px] text-emerald-300 font-bold font-mono flex items-center gap-1">
-                <span>🎙️</span> ${survivorName.toUpperCase()}'S VOICE NOTE (${currentTime}):
-              </span>
-              <span class="text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-500/40 px-1 rounded font-mono font-bold">AUDIO ATTACHED</span>
-            </div>
-            <audio controls src="${packet.voiceAudio}" class="w-full h-7 rounded"></audio>
-          </div>
-        `;
-      } else if (packet.hasVoice) {
-        voicePlayerHtml = `
-          <div class="bg-neutral-950 p-2 rounded border border-white/20 text-[10px] text-neutral-400 font-mono">
-            🎙️ Voice memo recorded by survivor (audio stripped over low-bandwidth link).
-          </div>
-        `;
-      }
-
-      card.innerHTML = `
-        <div class="flex justify-between items-center text-neutral-400 font-mono">
-          <span class="font-black text-white">#${packet.msgId} (${typeName})</span>
-          <span class="text-white">🕒 ${currentTime}</span>
-        </div>
-        <div class="text-xs font-bold text-white">👤 Survivor: ${survivorName}</div>
-        <p class="text-neutral-200 font-medium">${packet.text || "Emergency SOS"}</p>
-        <div class="flex justify-between text-neutral-400 font-mono text-[11px]">
-          <span>GPS: ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)</span>
-        </div>
-        ${voicePlayerHtml}
-        <div class="flex gap-2 mt-1">
-          <a href="${googleMapsNavUrl}" target="_blank" class="bg-white hover:bg-neutral-200 text-black font-bold py-1.5 px-3 rounded flex items-center gap-1 transition text-center justify-center">
-            🗺️ Route
-          </a>
-          <button class="vocalize-btn-${packet.msgId} bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-mono font-bold py-1.5 px-2.5 rounded text-[11px] border border-white/20 transition flex items-center gap-1" title="Vocalize telemetry using Tactical Voice">
-            <span>🔊</span> Speak
-          </button>
-          <button class="ack-btn card-ack-btn-${packet.msgId} flex-1 bg-emerald-400 hover:bg-emerald-300 text-black font-black py-1.5 px-3 rounded transition uppercase tracking-wider shadow active:scale-95">
-            🛡️ SEND RESCUE ACK ➔
-          </button>
-        </div>
-      `;
-      feed.prepend(card);
-
-      const vocalizeBtn = card.querySelector(`.vocalize-btn-${packet.msgId}`);
-      if (vocalizeBtn) {
-        vocalizeBtn.addEventListener("click", () => {
-          TacticalSpeech.speak(`Incident report for beacon number ${packet.msgId}. Survivor: ${survivorName}. Category: ${typeName}. Note: ${packet.text || "Emergency SOS"}. Accuracy within ${validAcc} meters.`, true);
-        });
-      }
-
-      const ackBtn = card.querySelector(`.card-ack-btn-${packet.msgId}`);
-      if (ackBtn) {
-        ackBtn.addEventListener("click", () => {
-          dispatchRescueAck(packet, ackBtn);
-        });
+    // 1. Update Top Alert Banner Voice Section
+    const bannerVoiceSec = document.getElementById("bannerVoiceSection");
+    const bannerVoiceAudio = document.getElementById("bannerVoiceAudio");
+    if (bannerVoiceSec && bannerVoiceAudio) {
+      bannerVoiceAudio.src = packet.voiceAudio;
+      bannerVoiceSec.classList.remove("hidden");
+      bannerVoiceSec.style.display = "flex";
+      const btnPlay = document.getElementById("btnPlayBannerVoice");
+      if (btnPlay) {
+        btnPlay.onclick = () => {
+          bannerVoiceAudio.currentTime = 0;
+          bannerVoiceAudio.play().catch(e => console.warn(e));
+        };
       }
     }
+
+    // 2. Update Live Incident Feed Card
+    const card = document.getElementById(`incident-card-${packet.msgId}`);
+    if (card) {
+      let voiceContainer = card.querySelector(".voice-player-container");
+      if (!voiceContainer) {
+        voiceContainer = document.createElement("div");
+        voiceContainer.className = "voice-player-container bg-black p-2.5 rounded-lg border-2 border-emerald-400/80 flex flex-col gap-1.5 shadow-inner my-1";
+        voiceContainer.innerHTML = `
+          <div class="flex justify-between items-center">
+            <span class="text-[10px] text-emerald-300 font-bold font-mono flex items-center gap-1">
+              <span>🎙️</span> ${survivorName.toUpperCase()}'S VOICE NOTE (${currentTime}):
+            </span>
+            <span class="text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.5 rounded font-mono font-bold animate-pulse">AUDIO READY</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" class="btn-play-voice-${packet.msgId} bg-emerald-400 hover:bg-emerald-300 text-black font-black text-[11px] px-3 py-1 rounded flex items-center gap-1 shadow transition active:scale-95">
+              ▶️ Play Voice
+            </button>
+            <audio id="feedVoiceAudio_${packet.msgId}" controls src="${packet.voiceAudio}" class="flex-1 h-7 rounded"></audio>
+          </div>
+        `;
+        const btnRow = card.querySelector(".flex.gap-2.mt-1");
+        if (btnRow) {
+          card.insertBefore(voiceContainer, btnRow);
+        } else {
+          card.appendChild(voiceContainer);
+        }
+        const playBtn = voiceContainer.querySelector(`.btn-play-voice-${packet.msgId}`);
+        const audioEl = voiceContainer.querySelector(`#feedVoiceAudio_${packet.msgId}`);
+        if (playBtn && audioEl) {
+          playBtn.onclick = () => {
+            audioEl.currentTime = 0;
+            audioEl.play().catch(e => console.warn(e));
+          };
+        }
+      } else {
+        const audioEl = voiceContainer.querySelector("audio");
+        if (audioEl) audioEl.src = packet.voiceAudio;
+      }
+    }
+
+    TacticalSpeech.speak(`Voice memo received for incident number ${packet.msgId} from ${survivorName}.`);
+  }
+
+  // 3. Deduplicate SOS packet, but permit voice enrichment if a subsequent packet has voiceAudio
+  const isAlreadySeen = seenMessages.has(packet.msgId);
+  if (isAlreadySeen) {
+    const prevPacket = window.seenSosPackets && window.seenSosPackets.get(packet.msgId);
+    if (packet.voiceAudio && (!prevPacket || !prevPacket.voiceAudio)) {
+      console.log(`🎙️ Voice audio enrichment arrived for beacon #${packet.msgId}! Updating UI.`);
+      if (prevPacket) prevPacket.voiceAudio = packet.voiceAudio;
+      if (window.seenSosPackets) window.seenSosPackets.set(packet.msgId, packet);
+      if (currentRole === 'receiver') {
+        enrichRescuerUiWithVoice(packet);
+      }
+    }
+    return;
+  }
+  seenMessages.add(packet.msgId);
+  if (!window.seenSosPackets) window.seenSosPackets = new Map();
+  window.seenSosPackets.set(packet.msgId, packet);
+
+  // 4. Handle incoming SOS on Rescue HQ
+  if (currentRole === 'receiver') {
+    latestDetectedSosPacket = packet;
+    playEmergencyAlertSound();
+
+    const typeNames = { 1: "Medical", 2: "Trapped", 3: "Fire", 4: "Flood" };
+    const typeName = packet.isPanic ? "CRITICAL PANIC" : (typeNames[packet.type] || "Distress");
+
+    const validLat = Number(packet.lat) || 17.3850;
+    const validLon = Number(packet.lon) || 78.4867;
+    const validAcc = Number(packet.accuracy) || 15;
+
+    // Tactical Voice Announcement on HQ
+    TacticalSpeech.speak(`Emergency alert. Distress beacon received from ${survivorName}. Incident type: ${typeName}. Coordinates plotted.`);
+
+    // Update Target Beacon ID Input in Console
+    const txtBeaconId = document.getElementById("txtTargetBeaconId");
+    if (txtBeaconId) txtBeaconId.value = packet.msgId;
+
+    // Update Empty State in Feed
+    const emptyFeed = document.getElementById("feedEmptyState");
+    if (emptyFeed) emptyFeed.classList.add("hidden");
+
+    // Update Top Alert Banner
+    document.getElementById("sosTime").innerText = currentTime;
+    document.getElementById("sosTitle").innerText = `🚨 ${typeName.toUpperCase()} FROM ${survivorName.toUpperCase()} (#${packet.msgId})!`;
+    document.getElementById("sosSubtitle").innerText = `GPS: ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)`;
+    sosBanner.classList.remove("hidden");
+
+    // Update Top Banner Voice Memo
+    const bannerVoiceSec = document.getElementById("bannerVoiceSection");
+    const bannerVoiceAudio = document.getElementById("bannerVoiceAudio");
+    if (bannerVoiceSec && bannerVoiceAudio) {
+      if (packet.voiceAudio) {
+        bannerVoiceAudio.src = packet.voiceAudio;
+        bannerVoiceSec.classList.remove("hidden");
+        bannerVoiceSec.style.display = "flex";
+        const btnPlay = document.getElementById("btnPlayBannerVoice");
+        if (btnPlay) {
+          btnPlay.onclick = () => {
+            bannerVoiceAudio.currentTime = 0;
+            bannerVoiceAudio.play().catch(e => console.warn(e));
+          };
+        }
+      } else {
+        bannerVoiceSec.classList.add("hidden");
+        bannerVoiceSec.style.display = "none";
+      }
+    }
+
+    if (btnBannerSendAck) {
+      btnBannerSendAck.disabled = false;
+      btnBannerSendAck.innerHTML = `<span>🛡️</span> SEND RESCUE ACK ➔`;
+      btnBannerSendAck.className = "bg-emerald-400 hover:bg-emerald-300 text-black font-black text-xs px-3.5 py-2 rounded-lg transition uppercase tracking-wider flex items-center gap-1.5 shadow-xl active:scale-95";
+    }
+
+    // Update Rescue ACK Console Status & Button
+    const mainBtn = document.getElementById("btnMainDispatchAck");
+    if (mainBtn) {
+      mainBtn.innerHTML = `<span>🛡️</span> SEND RESCUE ACK TO ${survivorName.toUpperCase()} (#${packet.msgId}) ➔`;
+    }
+
+    const beaconSummaryEl = document.getElementById("latestBeaconSummary");
+    if (beaconSummaryEl) {
+      beaconSummaryEl.innerText = `ACTIVE BEACON #${packet.msgId} (${survivorName}) - Lat: ${validLat.toFixed(5)}, Lon: ${validLon.toFixed(5)}`;
+      beaconSummaryEl.className = "bg-neutral-900 border border-emerald-400/50 p-2 rounded text-[11px] text-emerald-300 font-mono font-bold truncate animate-pulse";
+    }
+
+    const logEl = document.getElementById("ackDispatchLog");
+    if (logEl) {
+      logEl.innerText = `ALERT: Distress beacon #${packet.msgId} detected. Ready to transmit Rescue ACK.`;
+      logEl.className = "text-[10px] text-amber-300 font-mono bg-neutral-900/80 p-2 rounded border border-amber-400/30";
+    }
+
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+
+    const googleMapsNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${validLat},${validLon}`;
+
+    // Add High-Precision Map Marker (safely checks if Leaflet is available offline)
+    if (typeof L !== 'undefined' && map && markersLayer) {
+      try {
+        const marker = L.marker([validLat, validLon]).addTo(markersLayer);
+        L.circle([validLat, validLon], {
+          color: '#10b981',
+          fillColor: '#10b981',
+          fillOpacity: 0.25,
+          radius: validAcc
+        }).addTo(markersLayer);
+
+        marker.bindPopup(`
+          <div class="font-mono text-xs text-black">
+            <b>${packet.isPanic ? '🚨 CRITICAL PANIC' : 'SOS Beacon'} #${packet.msgId}</b><br>
+            <span><b>Survivor:</b> ${survivorName}</span><br>
+            <span><b>Time:</b> ${currentTime}</span><br>
+            <span><b>GPS:</b> ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)</span><br>
+            ${packet.voiceAudio ? '<span style="color:#059669; font-weight:bold;">🎙️ Situational Voice Memo Attached</span><br>' : ''}
+            <a href="${googleMapsNavUrl}" target="_blank" style="color: #0066cc; text-decoration: underline; font-weight: bold; margin-top: 4px; display: inline-block;">🗺️ Open Turn-by-Turn Route</a>
+            <button id="btnMapPopupAck_${packet.msgId}" style="margin-top: 8px; width: 100%; background: #10b981; color: black; font-weight: 900; padding: 6px 10px; border-radius: 6px; border: none; cursor: pointer; text-transform: uppercase;">
+              🛡️ SEND RESCUE ACK ➔
+            </button>
+          </div>
+        `).openPopup();
+
+        marker.on('popupopen', () => {
+          const popupAckBtn = document.getElementById(`btnMapPopupAck_${packet.msgId}`);
+          if (popupAckBtn) {
+            popupAckBtn.onclick = () => dispatchRescueAck(packet, popupAckBtn);
+          }
+        });
+
+        // Pan & Zoom directly onto survivor coordinates or fit all active markers across different areas
+        if (markersLayer.getLayers().length > 2) {
+          const group = L.featureGroup(markersLayer.getLayers());
+          map.fitBounds(group.getBounds().pad(0.2));
+        } else {
+          map.setView([validLat, validLon], 16);
+        }
+      } catch (mapErr) {
+        console.warn("Leaflet marker placement note:", mapErr);
+      }
+    }
+
+    // Add Card to Live Incident Feed
+    const feed = document.getElementById("feed");
+    const card = document.createElement("div");
+    card.id = `incident-card-${packet.msgId}`;
+    card.className = packet.isPanic 
+      ? "bg-neutral-900 border-2 border-red-500 p-3.5 rounded-lg shadow-xl text-xs flex flex-col gap-2"
+      : "bg-neutral-900 border-l-4 border-emerald-400 p-3.5 rounded-lg shadow-lg text-xs flex flex-col gap-2";
+
+    let voicePlayerHtml = '';
+    if (packet.voiceAudio) {
+      voicePlayerHtml = `
+        <div class="voice-player-container bg-black p-2.5 rounded-lg border-2 border-emerald-400/80 flex flex-col gap-1.5 shadow-inner my-1">
+          <div class="flex justify-between items-center">
+            <span class="text-[10px] text-emerald-300 font-bold font-mono flex items-center gap-1">
+              <span>🎙️</span> ${survivorName.toUpperCase()}'S VOICE NOTE (${currentTime}):
+            </span>
+            <span class="text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.5 rounded font-mono font-bold animate-pulse">AUDIO READY</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" class="btn-play-voice-${packet.msgId} bg-emerald-400 hover:bg-emerald-300 text-black font-black text-[11px] px-3 py-1 rounded flex items-center gap-1 shadow transition active:scale-95">
+              ▶️ Play Voice
+            </button>
+            <audio id="feedVoiceAudio_${packet.msgId}" controls src="${packet.voiceAudio}" class="flex-1 h-7 rounded"></audio>
+          </div>
+        </div>
+      `;
+    } else if (packet.hasVoice) {
+      voicePlayerHtml = `
+        <div class="voice-player-container bg-neutral-950 p-2 rounded border border-white/20 text-[10px] text-neutral-400 font-mono">
+          🎙️ Voice memo recorded by survivor (audio stripped over low-bandwidth link).
+        </div>
+      `;
+    }
+
+    card.innerHTML = `
+      <div class="flex justify-between items-center text-neutral-400 font-mono">
+        <span class="font-black text-white">#${packet.msgId} (${typeName})</span>
+        <span class="text-white">🕒 ${currentTime}</span>
+      </div>
+      <div class="text-xs font-bold text-white">👤 Survivor: ${survivorName}</div>
+      <p class="text-neutral-200 font-medium">${packet.text || "Emergency SOS"}</p>
+      <div class="flex justify-between text-neutral-400 font-mono text-[11px]">
+        <span>GPS: ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)</span>
+      </div>
+      ${voicePlayerHtml}
+      <div class="flex gap-2 mt-1">
+        <a href="${googleMapsNavUrl}" target="_blank" class="bg-white hover:bg-neutral-200 text-black font-bold py-1.5 px-3 rounded flex items-center gap-1 transition text-center justify-center">
+          🗺️ Route
+        </a>
+        <button class="vocalize-btn-${packet.msgId} bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-mono font-bold py-1.5 px-2.5 rounded text-[11px] border border-white/20 transition flex items-center gap-1" title="Vocalize telemetry using Tactical Voice">
+          <span>🔊</span> Speak
+        </button>
+        <button class="ack-btn card-ack-btn-${packet.msgId} flex-1 bg-emerald-400 hover:bg-emerald-300 text-black font-black py-1.5 px-3 rounded transition uppercase tracking-wider shadow active:scale-95">
+          🛡️ SEND RESCUE ACK ➔
+        </button>
+      </div>
+    `;
+    feed.prepend(card);
+
+    const playCardVoiceBtn = card.querySelector(`.btn-play-voice-${packet.msgId}`);
+    const cardAudioEl = card.querySelector(`#feedVoiceAudio_${packet.msgId}`);
+    if (playCardVoiceBtn && cardAudioEl) {
+      playCardVoiceBtn.onclick = () => {
+        cardAudioEl.currentTime = 0;
+        cardAudioEl.play().catch(e => console.warn(e));
+      };
+    }
+
+    const vocalizeBtn = card.querySelector(`.vocalize-btn-${packet.msgId}`);
+    if (vocalizeBtn) {
+      vocalizeBtn.addEventListener("click", () => {
+        TacticalSpeech.speak(`Incident report for beacon number ${packet.msgId}. Survivor: ${survivorName}. Category: ${typeName}. Note: ${packet.text || "Emergency SOS"}. Accuracy within ${validAcc} meters.`, true);
+      });
+    }
+
+    const ackBtn = card.querySelector(`.card-ack-btn-${packet.msgId}`);
+    if (ackBtn) {
+      ackBtn.addEventListener("click", () => {
+        dispatchRescueAck(packet, ackBtn);
+      });
+    }
+  }
   }
 
   // Network Mesh Modal & Device Pairing UI Controls

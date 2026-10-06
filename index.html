@@ -279,14 +279,19 @@
             Target location plotted on tactical map. Review telemetry below.
           </p>
           <!-- Survivor Voice Memo in Alert Banner -->
-          <div id="bannerVoiceSection" class="hidden mt-2 p-2 bg-black rounded-lg border border-emerald-400/60 flex flex-col gap-1 max-w-sm">
+          <div id="bannerVoiceSection" class="hidden mt-2 p-2.5 bg-black rounded-lg border-2 border-emerald-400 flex flex-col gap-1.5 max-w-sm shadow-xl">
             <div class="flex justify-between items-center">
               <span class="text-[10px] text-emerald-300 font-bold font-mono flex items-center gap-1">
                 <span>🎙️</span> SURVIVOR VOICE MEMO ATTACHED
               </span>
-              <span class="text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-500/40 px-1 rounded font-mono">AUDIO MEMO</span>
+              <span class="text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.5 rounded font-mono font-bold animate-pulse">AUDIO READY</span>
             </div>
-            <audio id="bannerVoiceAudio" controls class="w-full h-7 rounded"></audio>
+            <div class="flex items-center gap-2">
+              <button id="btnPlayBannerVoice" type="button" class="bg-emerald-400 hover:bg-emerald-300 text-black font-black text-xs px-3 py-1.5 rounded-md flex items-center gap-1 shadow transition active:scale-95">
+                ▶️ Play Voice
+              </button>
+              <audio id="bannerVoiceAudio" controls class="flex-1 h-7 rounded"></audio>
+            </div>
           </div>
         </div>
       </div>
@@ -382,10 +387,10 @@
         <div id="voiceModuleBox" class="mb-3 bg-neutral-900 p-3.5 rounded-xl border border-white/20 transition-colors">
           <div class="flex justify-between items-center mb-2">
             <label class="text-[10px] font-black text-neutral-400 tracking-wider uppercase font-mono flex items-center gap-1">
-              <span>🎙️</span> SITUATIONAL VOICE MEMO (5 SEC)
+              <span>🎙️</span> SITUATIONAL VOICE MEMO (MAX 4 SEC - AUTO-ATTACHED)
             </label>
             <div class="flex items-center gap-2">
-              <span id="voiceAttachedBadge" class="hidden text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-500/50 px-1.5 py-0.5 rounded font-mono font-bold">✓ ATTACHED</span>
+              <span id="voiceAttachedBadge" class="hidden text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-500/50 px-1.5 py-0.5 rounded font-mono font-bold">✓ AUDIO READY</span>
               <span id="recordTimer" class="text-xs font-mono text-white font-bold">00:00</span>
             </div>
           </div>
@@ -396,9 +401,9 @@
             <button id="btnClearVoice" type="button" class="hidden bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-white/20 text-xs font-bold py-2 px-2.5 rounded-md transition" title="Clear voice memo">
               🗑️ Clear
             </button>
-            <audio id="audioPreview" controls class="h-8 flex-1 hidden rounded"></audio>
+            <audio id="audioPreview" controls class="h-8 flex-1 hidden rounded border border-white/20"></audio>
           </div>
-          <p id="recordStatus" class="text-[10px] text-neutral-500 mt-1.5">Record a 5-second situational voice clip to attach to your SOS beacon.</p>
+          <p id="recordStatus" class="text-[10px] text-neutral-400 mt-1.5">Record a 4-second voice note. Even if recording is active when tapping Broadcast, it will automatically attach.</p>
         </div>
 
         <!-- Short Note Input -->
@@ -564,11 +569,11 @@
 
   </main>
 
-  <script src="crc16.js?v=12"></script>
-  <script src="packetEngine.js?v=12"></script>
-  <script src="paho-mqtt.js?v=12"></script>
-  <script src="meshBridge.js?v=12"></script>
-  <script src="audioModem.js?v=12"></script>
-  <script src="app.js?v=12"></script>
+  <script src="crc16.js?v=13"></script>
+  <script src="packetEngine.js?v=13"></script>
+  <script src="paho-mqtt.js?v=13"></script>
+  <script src="meshBridge.js?v=13"></script>
+  <script src="audioModem.js?v=13"></script>
+  <script src="app.js?v=13"></script>
 </body>
 </html>
