@@ -1,5 +1,5 @@
 // sw.js - Offline Service Worker Cache
-const CACHE_NAME = 'silentbridge-v9';
+const CACHE_NAME = 'silentbridge-v10';
 const ASSETS = [
   './',
   './index.html',
