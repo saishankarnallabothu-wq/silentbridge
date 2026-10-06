@@ -276,9 +276,14 @@
           </p>
         </div>
       </div>
-      <button id="btnDismissSos" class="bg-neutral-800 hover:bg-neutral-700 border border-white/40 text-white text-xs px-3 py-1.5 rounded-md font-bold transition">
-        Dismiss
-      </button>
+      <div class="flex flex-col sm:flex-row items-end sm:items-center gap-2 flex-shrink-0">
+        <button id="btnBannerSendAck" class="bg-emerald-400 hover:bg-emerald-300 text-black font-black text-xs px-3.5 py-2 rounded-lg transition uppercase tracking-wider flex items-center gap-1.5 shadow-xl active:scale-95">
+          <span>🛡️</span> SEND RESCUE ACK ➔
+        </button>
+        <button id="btnDismissSos" class="bg-neutral-800 hover:bg-neutral-700 border border-white/40 text-neutral-300 text-xs px-2.5 py-2 rounded-lg font-bold transition">
+          ✕
+        </button>
+      </div>
     </div>
 
   </div>
@@ -423,6 +428,23 @@
     <!-- RECEIVER PANEL -->
     <div id="panelReceiver" class="w-full flex flex-col gap-4 hidden">
       <div id="map" class="h-64 rounded-xl border border-white/30 shadow-xl overflow-hidden"></div>
+
+      <!-- Direct Rescue Dispatch & ACK Control Bar -->
+      <div id="quickDispatchBar" class="bg-neutral-900 border-2 border-emerald-400/80 p-3 rounded-xl flex flex-wrap items-center justify-between gap-2.5 shadow-xl">
+        <div class="flex items-center gap-2">
+          <div class="w-7 h-7 rounded-full bg-emerald-400 text-black font-black flex items-center justify-center text-xs">
+            🛡️
+          </div>
+          <div>
+            <div class="text-[11px] font-black text-white font-mono uppercase tracking-wide">RESCUE ACK DISPATCH CONTROL</div>
+            <div id="latestBeaconSummary" class="text-[10px] text-emerald-300 font-mono">STANDBY: Ready to acknowledge survivor distress beacons</div>
+          </div>
+        </div>
+        <button id="btnQuickDispatchAck" class="bg-emerald-400 hover:bg-emerald-300 text-black font-black text-xs px-4 py-2 rounded-lg transition uppercase tracking-wider font-mono flex items-center gap-1.5 shadow-lg active:scale-95">
+          <span>✓</span> DISPATCH ACK TO SENDER ➔
+        </button>
+      </div>
+
       <div class="flex-1 bg-neutral-950 border border-white/20 p-4 rounded-xl flex flex-col min-h-[260px] shadow-2xl">
         <div class="flex justify-between items-center mb-3">
           <h2 class="text-xs font-black text-white tracking-widest uppercase font-mono">LIVE INCIDENT & RESCUE FEED</h2>

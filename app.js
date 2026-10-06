@@ -6,7 +6,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentLat = null, currentLon = null, currentAccuracy = null;
   let selectedType = 1;
   let currentRole = 'sender';
-  let myLastSentMsgId = null;
+  let myLastSentMsgId = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("silentbridge_last_msg_id")) || null;
   let isRescuerAuthenticated = false;
 
   const DEFAULT_MASTER_PASSWORD = "RESCUE2026";
@@ -593,6 +593,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const sentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     myLastSentMsgId = generatedId;
+    try { sessionStorage.setItem("silentbridge_last_msg_id", String(generatedId)); } catch (e) {}
 
     const packetObj = {
       msgId: generatedId,
@@ -656,6 +657,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const sentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     myLastSentMsgId = generatedId;
+    try { sessionStorage.setItem("silentbridge_last_msg_id", String(generatedId)); } catch (e) {}
 
     const packetObj = {
       msgId: generatedId,
@@ -738,6 +740,92 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Centralized Rescue ACK Dispatch Controller (Acoustic Loudspeaker & Global Cloud Mesh)
+  let latestDetectedSosPacket = null;
+
+  async function dispatchRescueAck(packetToAck, triggerBtn) {
+    const target = packetToAck || latestDetectedSosPacket;
+    if (!target) {
+      alert("No active distress beacon to acknowledge yet.");
+      return;
+    }
+
+    const msgId = Number(target.msgId) || 1000;
+    const targetRoom = target._room || 'GLOBAL';
+    const ackTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    console.log(`🛡️ Dispatching Rescue ACK for beacon #${msgId}...`);
+
+    if (triggerBtn) {
+      triggerBtn.disabled = true;
+      triggerBtn.innerText = `⏳ DISPATCHING ACK #${msgId}...`;
+    }
+
+    // 1. Acoustic ACK Transmission (Loudspeaker Sound Wave for Direct Offline Airwaves)
+    try {
+      await modem.initAudio();
+      const ackBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
+        ? PacketEngine.encodeAcoustic({ msgId: msgId, type: 0xFF })
+        : PacketEngine.encodeAck(msgId);
+      await modem.transmitPacket(ackBytes);
+      console.log(`🔊 Acoustic ACK tones broadcasted over speaker for #${msgId}`);
+    } catch (acousticErr) {
+      console.warn("Acoustic ACK playback note:", acousticErr);
+    }
+
+    // 2. Multi-Transport Cloud Mesh MQTT (Worldwide over any distance)
+    broadcastMeshPacket({
+      msgId: msgId,
+      type: 0xFF,
+      timestamp: ackTime,
+      _room: targetRoom
+    });
+    console.log(`🌐 Mesh ACK packet broadcasted for #${msgId} (Room: #${targetRoom})`);
+
+    // 3. Synchronize All UI ACK Buttons
+    const bannerAckBtn = document.getElementById("btnBannerSendAck");
+    if (bannerAckBtn) {
+      bannerAckBtn.innerHTML = `<span>✓</span> ACK DISPATCHED (#${msgId})`;
+      bannerAckBtn.disabled = true;
+      bannerAckBtn.className = "bg-neutral-800 text-neutral-400 font-bold text-xs px-3.5 py-2 rounded-lg cursor-not-allowed";
+    }
+
+    const quickAckBtn = document.getElementById("btnQuickDispatchAck");
+    if (quickAckBtn) {
+      quickAckBtn.innerHTML = `<span>✓</span> ACK DISPATCHED (#${msgId})`;
+      quickAckBtn.disabled = true;
+      quickAckBtn.className = "bg-neutral-800 text-neutral-400 font-bold text-xs px-4 py-2 rounded-lg cursor-not-allowed font-mono";
+    }
+
+    const beaconSummaryEl = document.getElementById("latestBeaconSummary");
+    if (beaconSummaryEl) {
+      beaconSummaryEl.innerText = `CONFIRMED: Rescue ACK dispatched for #${msgId} at ${ackTime}`;
+      beaconSummaryEl.className = "text-[10px] text-emerald-400 font-mono font-bold";
+    }
+
+    // Update any feed card ACK buttons for this beacon
+    document.querySelectorAll(`.card-ack-btn-${msgId}`).forEach(btn => {
+      btn.innerText = `✓ ACK DISPATCHED (${ackTime})`;
+      btn.disabled = true;
+      btn.className = "ack-btn flex-1 bg-neutral-800 text-neutral-500 font-bold py-1.5 px-3 rounded cursor-not-allowed";
+    });
+  }
+
+  // Wire Top Alert Banner and Quick Dispatch Control Bar ACK Buttons
+  const btnBannerSendAck = document.getElementById("btnBannerSendAck");
+  if (btnBannerSendAck) {
+    btnBannerSendAck.addEventListener("click", () => {
+      dispatchRescueAck(latestDetectedSosPacket, btnBannerSendAck);
+    });
+  }
+
+  const btnQuickDispatchAck = document.getElementById("btnQuickDispatchAck");
+  if (btnQuickDispatchAck) {
+    btnQuickDispatchAck.addEventListener("click", () => {
+      dispatchRescueAck(latestDetectedSosPacket, btnQuickDispatchAck);
+    });
+  }
+
   // Receiver Handler with High-Precision Marker & Direct OpenStreetMap Focus
   function handleReceivedPacket(packet, transport) {
     const currentTime = packet.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -760,8 +848,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // 2. Check for Rescue ACK confirmation packet
     if (packet.type === 0xFF) {
       if (currentRole === 'sender') {
-        const isMyAck = !myLastSentMsgId 
-          || String(packet.msgId) === String(myLastSentMsgId)
+        const isMyAck = (myLastSentMsgId && String(packet.msgId) === String(myLastSentMsgId))
           || (activePendingPacket && String(packet.msgId) === String(activePendingPacket.msgId));
 
         if (isMyAck) {
@@ -785,6 +872,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 4. Handle incoming SOS on Rescue HQ
     if (currentRole === 'receiver') {
+      latestDetectedSosPacket = packet;
       playEmergencyAlertSound();
 
       const typeNames = { 1: "Medical", 2: "Trapped", 3: "Fire", 4: "Flood" };
@@ -794,25 +882,44 @@ document.addEventListener("DOMContentLoaded", () => {
       const validLon = Number(packet.lon) || 78.4867;
       const validAcc = Number(packet.accuracy) || 15;
 
+      // Update Top Banner
       document.getElementById("sosTime").innerText = currentTime;
       document.getElementById("sosTitle").innerText = `🚨 ${typeName.toUpperCase()} FROM ${survivorName.toUpperCase()} (#${packet.msgId})!`;
       document.getElementById("sosSubtitle").innerText = `GPS: ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)`;
       sosBanner.classList.remove("hidden");
 
+      if (btnBannerSendAck) {
+        btnBannerSendAck.disabled = false;
+        btnBannerSendAck.innerHTML = `<span>🛡️</span> SEND RESCUE ACK ➔`;
+        btnBannerSendAck.className = "bg-emerald-400 hover:bg-emerald-300 text-black font-black text-xs px-3.5 py-2 rounded-lg transition uppercase tracking-wider flex items-center gap-1.5 shadow-xl active:scale-95";
+      }
+
+      // Update Quick Dispatch Bar
+      const beaconSummaryEl = document.getElementById("latestBeaconSummary");
+      if (beaconSummaryEl) {
+        beaconSummaryEl.innerText = `ACTIVE BEACON #${packet.msgId} (${survivorName}) - Lat: ${validLat.toFixed(5)}, Lon: ${validLon.toFixed(5)}`;
+        beaconSummaryEl.className = "text-[10px] text-emerald-300 font-mono font-bold animate-pulse";
+      }
+      if (btnQuickDispatchAck) {
+        btnQuickDispatchAck.disabled = false;
+        btnQuickDispatchAck.innerHTML = `<span>✓</span> DISPATCH ACK TO SENDER ➔`;
+        btnQuickDispatchAck.className = "bg-emerald-400 hover:bg-emerald-300 text-black font-black text-xs px-4 py-2 rounded-lg transition uppercase tracking-wider font-mono flex items-center gap-1.5 shadow-lg active:scale-95";
+      }
+
       if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+
+      const googleMapsNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${validLat},${validLon}`;
 
       // Add High-Precision Map Marker (safely checks if Leaflet is available offline)
       if (typeof L !== 'undefined' && map && markersLayer) {
         try {
           const marker = L.marker([validLat, validLon]).addTo(markersLayer);
           L.circle([validLat, validLon], {
-            color: '#ffffff',
-            fillColor: '#ffffff',
+            color: '#10b981',
+            fillColor: '#10b981',
             fillOpacity: 0.25,
             radius: validAcc
           }).addTo(markersLayer);
-
-          const googleMapsNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${validLat},${validLon}`;
 
           marker.bindPopup(`
             <div class="font-mono text-xs text-black">
@@ -821,8 +928,18 @@ document.addEventListener("DOMContentLoaded", () => {
               <span><b>Time:</b> ${currentTime}</span><br>
               <span><b>GPS:</b> ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)</span><br>
               <a href="${googleMapsNavUrl}" target="_blank" style="color: #0066cc; text-decoration: underline; font-weight: bold; margin-top: 4px; display: inline-block;">🗺️ Open Turn-by-Turn Route</a>
+              <button id="btnMapPopupAck_${packet.msgId}" style="margin-top: 8px; width: 100%; background: #10b981; color: black; font-weight: 900; padding: 6px 10px; border-radius: 6px; border: none; cursor: pointer; text-transform: uppercase;">
+                🛡️ SEND RESCUE ACK ➔
+              </button>
             </div>
           `).openPopup();
+
+          marker.on('popupopen', () => {
+            const popupAckBtn = document.getElementById(`btnMapPopupAck_${packet.msgId}`);
+            if (popupAckBtn) {
+              popupAckBtn.onclick = () => dispatchRescueAck(packet, popupAckBtn);
+            }
+          });
 
           // Pan & Zoom directly onto survivor coordinates or fit all active markers across different areas
           if (markersLayer.getLayers().length > 2) {
@@ -840,8 +957,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const feed = document.getElementById("feed");
       const card = document.createElement("div");
       card.className = packet.isPanic 
-        ? "bg-neutral-900 border-2 border-white p-3.5 rounded-lg shadow-xl text-xs flex flex-col gap-2"
-        : "bg-neutral-900 border-l-4 border-white p-3.5 rounded-lg shadow-lg text-xs flex flex-col gap-2";
+        ? "bg-neutral-900 border-2 border-red-500 p-3.5 rounded-lg shadow-xl text-xs flex flex-col gap-2"
+        : "bg-neutral-900 border-l-4 border-emerald-400 p-3.5 rounded-lg shadow-lg text-xs flex flex-col gap-2";
 
       let voicePlayerHtml = '';
       if (packet.voiceAudio) {
@@ -868,28 +985,19 @@ document.addEventListener("DOMContentLoaded", () => {
           <a href="${googleMapsNavUrl}" target="_blank" class="bg-white hover:bg-neutral-200 text-black font-bold py-1.5 px-3 rounded flex items-center gap-1 transition text-center justify-center">
             🗺️ Route
           </a>
-          <button class="ack-btn flex-1 bg-white hover:bg-neutral-200 text-black font-black py-1.5 px-3 rounded transition uppercase tracking-wider">
-            SEND RESCUE ACK ➔
+          <button class="ack-btn card-ack-btn-${packet.msgId} flex-1 bg-emerald-400 hover:bg-emerald-300 text-black font-black py-1.5 px-3 rounded transition uppercase tracking-wider shadow active:scale-95">
+            🛡️ SEND RESCUE ACK ➔
           </button>
         </div>
       `;
       feed.prepend(card);
 
-      const ackBtn = card.querySelector(".ack-btn");
-      ackBtn.addEventListener("click", async () => {
-        ackBtn.disabled = true;
-        await modem.initAudio();
-        const ackBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
-          ? PacketEngine.encodeAcoustic({ msgId: packet.msgId, type: 0xFF })
-          : PacketEngine.encodeAck(packet.msgId);
-        const ackTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-        await modem.transmitPacket(ackBytes);
-        broadcastMeshPacket({ msgId: packet.msgId, type: 0xFF, timestamp: ackTime, _room: packet._room });
-
-        ackBtn.innerText = `✓ ACK DISPATCHED (${ackTime})`;
-        ackBtn.className = "ack-btn flex-1 bg-neutral-800 text-neutral-500 font-bold py-1.5 px-3 rounded cursor-not-allowed";
-      });
+      const ackBtn = card.querySelector(`.card-ack-btn-${packet.msgId}`);
+      if (ackBtn) {
+        ackBtn.addEventListener("click", () => {
+          dispatchRescueAck(packet, ackBtn);
+        });
+      }
     }
   }
 

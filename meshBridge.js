@@ -84,18 +84,10 @@ class SilentBridgeMesh {
   setRole(newRole) {
     this.role = newRole;
     if (this.mqttClient && this.cloudConnected) {
-      if (this.role === 'receiver') {
-        try {
-          this.mqttClient.subscribe('silentbridge/v2/#', {
-            onSuccess: () => console.log("Subscribed HQ to wildcard silentbridge/v2/#")
-          });
-        } catch (e) {}
-      } else {
-        try {
-          this.mqttClient.subscribe(`silentbridge/v2/${this.roomCode}`);
-          this.mqttClient.subscribe('silentbridge/v2/GLOBAL');
-        } catch (e) {}
-      }
+      const topics = ['silentbridge/v2/#', 'silentbridge/v2/GLOBAL', `silentbridge/v2/${this.roomCode}`];
+      topics.forEach(t => {
+        try { this.mqttClient.subscribe(t, { qos: 1 }); } catch (e) {}
+      });
     }
     this.sendPing();
   }
@@ -178,7 +170,7 @@ class SilentBridgeMesh {
       return;
     }
 
-    const broker = this.activeBrokers[this.currentBrokerIndex];
+    const broker = this.activeBrokers[0]; // Unified primary broker across all devices
     const clientId = `sb_${this.deviceId}_${Math.random().toString(36).substring(2, 6)}`;
 
     try {
@@ -188,10 +180,7 @@ class SilentBridgeMesh {
         this.cloudConnected = false;
         console.warn(`MQTT connection lost from ${broker.name}:`, resp.errorMessage);
         this.notifyStatus('reconnecting', `Relay reconnecting (${resp.errorMessage || 'lost'})...`);
-
-        // Alternate broker on failure
-        this.currentBrokerIndex = (this.currentBrokerIndex + 1) % this.activeBrokers.length;
-        setTimeout(() => this.initCloudMqtt(), 3000);
+        setTimeout(() => this.initCloudMqtt(), 2000);
       };
 
       this.mqttClient.onMessageArrived = (message) => {
@@ -208,18 +197,20 @@ class SilentBridgeMesh {
       this.mqttClient.connect({
         useSSL: true,
         timeout: 10,
-        keepAliveInterval: 30,
+        keepAliveInterval: 15,
         cleanSession: true,
         onSuccess: () => {
           this.cloudConnected = true;
-          // Rescuer HQ subscribes to wildcard silentbridge/v2/#; Senders subscribe to their room and GLOBAL
-          const topics = (this.role === 'receiver')
-            ? ['silentbridge/v2/#']
-            : [`silentbridge/v2/${this.roomCode}`, 'silentbridge/v2/GLOBAL'];
+          // Universal subscription for BOTH Senders and Receivers across all distances:
+          const topics = [
+            'silentbridge/v2/#',
+            'silentbridge/v2/GLOBAL',
+            `silentbridge/v2/${this.roomCode}`
+          ];
 
           topics.forEach(t => {
             this.mqttClient.subscribe(t, {
-              qos: 0,
+              qos: 1,
               onSuccess: () => console.log(`✅ Subscribed to ${t}`),
               onFailure: (err) => console.warn(`Failed subscribe ${t}:`, err)
             });
@@ -232,13 +223,12 @@ class SilentBridgeMesh {
         onFailure: (err) => {
           this.cloudConnected = false;
           console.warn(`Failed to connect to ${broker.name}:`, err);
-          this.currentBrokerIndex = (this.currentBrokerIndex + 1) % this.activeBrokers.length;
-          setTimeout(() => this.initCloudMqtt(), 3500);
+          setTimeout(() => this.initCloudMqtt(), 3000);
         }
       });
     } catch (err) {
       console.warn("MQTT init error:", err);
-      setTimeout(() => this.initCloudMqtt(), 5000);
+      setTimeout(() => this.initCloudMqtt(), 4000);
     }
   }
 
@@ -284,11 +274,11 @@ class SilentBridgeMesh {
   startHeartbeat() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
 
-    // Send ping every 12 seconds
+    // Send ping every 8 seconds to prevent mobile carrier NAT socket timeouts
     this.heartbeatTimer = setInterval(() => {
       this.sendPing();
       this.pruneOldPeers();
-    }, 12000);
+    }, 8000);
   }
 
   sendPing() {
@@ -333,18 +323,27 @@ class SilentBridgeMesh {
     // 2. Cloud Mesh MQTT (Cross-Device across anywhere in the world)
     if (this.mqttClient && this.cloudConnected) {
       try {
+        // Strip heavy base64 voice audio from MQTT packet so message never exceeds broker size limits
+        const mqttPacket = { ...packetObj };
+        if (mqttPacket.voiceAudio && mqttPacket.voiceAudio.length > 25000) {
+          mqttPacket.hasVoice = true;
+          mqttPacket.voiceAudio = null;
+        }
+
+        const mqttPayload = JSON.stringify(mqttPacket);
         const targetRoom = packetObj._room || this.roomCode || 'GLOBAL';
-        const topic = `silentbridge/v2/${targetRoom}`;
-        const message = new Paho.MQTT.Message(payloadString);
-        message.destinationName = topic;
-        message.qos = 0;
+
+        // Publish to room topic with QoS 1 guaranteed delivery
+        const message = new Paho.MQTT.Message(mqttPayload);
+        message.destinationName = `silentbridge/v2/${targetRoom}`;
+        message.qos = 1;
         this.mqttClient.send(message);
 
-        // Also broadcast to GLOBAL so any general rescuer or scanner picks it up
+        // Also broadcast to GLOBAL so any rescuer picks it up instantly
         if (targetRoom !== 'GLOBAL' && !isInternal) {
-          const globalMsg = new Paho.MQTT.Message(payloadString);
+          const globalMsg = new Paho.MQTT.Message(mqttPayload);
           globalMsg.destinationName = 'silentbridge/v2/GLOBAL';
-          globalMsg.qos = 0;
+          globalMsg.qos = 1;
           this.mqttClient.send(globalMsg);
         }
       } catch (e) {

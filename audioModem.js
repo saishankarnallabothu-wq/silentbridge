@@ -20,10 +20,10 @@ class AudioModem {
     this.demodInterval = null;
     this.currentRxState = 'STANDBY';
 
-    // FSK Protocol Parameters
+    // FSK Protocol Parameters (Tuned to 1200-2200 Hz for universal speaker/mic sensitivity)
     this.PILOT_FREQ = 950;
-    this.SYNC_FREQ = 2700;
-    this.DATA_FREQS = [1300, 1650, 2000, 2350]; // 350 Hz tone spacing for maximum noise immunity
+    this.SYNC_FREQ = 2200;
+    this.DATA_FREQS = [1200, 1450, 1700, 1950]; // 250 Hz separation within peak microphone response band
     this.END_FREQ = 950;
     this.SYMBOL_MS = 80; // 80ms per 2-bit symbol with integrated energy matched filtering
   }
@@ -274,6 +274,7 @@ class AudioModem {
     let rxState = 'IDLE'; // IDLE, WAIT_SYNC_END, DATA
     let syncCounter = 0;
     let syncDetectTime = 0;
+    let peakSyncEnergy = 0;
     let rxSymbols = [];
     let expectedSymbols = 56;
     let symbolStartTime = 0;
@@ -312,19 +313,21 @@ class AudioModem {
 
       if (rxState === 'IDLE') {
         this.currentRxState = 'LISTENING';
-        // 2-tick confirmation guarantees lock onto true 150ms 2700Hz sync tone, rejecting noise spikes
-        if (syncEnergy > Math.max(18, noiseFloor + 8)) {
+        // 2-tick confirmation guarantees lock onto true 150ms 2200Hz sync tone, rejecting noise spikes
+        if (syncEnergy > Math.max(16, noiseFloor + 7)) {
           syncCounter++;
           if (syncCounter >= 2) {
             rxState = 'WAIT_SYNC_END';
             syncDetectTime = now;
+            peakSyncEnergy = syncEnergy;
           }
         } else {
           syncCounter = 0;
         }
       } else if (rxState === 'WAIT_SYNC_END') {
-        // Sync tone ends: sync frequency energy drops OR max sync duration reached
-        const syncEnded = (syncEnergy < Math.max(14, noiseFloor + 6)) || (now - syncDetectTime > 160);
+        if (syncEnergy > peakSyncEnergy) peakSyncEnergy = syncEnergy;
+        // Sync tone ends: sync frequency energy drops by >50% from its peak, or hits baseline threshold, or 150ms timeout
+        const syncEnded = (syncEnergy < Math.max(14, peakSyncEnergy * 0.48)) || (now - syncDetectTime > 150);
 
         if (syncEnded) {
           rxState = 'DATA';
@@ -333,11 +336,13 @@ class AudioModem {
           expectedSymbols = 56;
           symbolStartTime = now;
           energyAccumulators = [0, 0, 0, 0];
+          peakSyncEnergy = 0;
           console.log("🔊 Acoustic sync locked! Receiving data symbols with energy integration...");
           this.onStatusChange("RX ACOUSTIC INCOMING...");
         } else if (now - syncDetectTime > 350) {
           rxState = 'IDLE';
           syncCounter = 0;
+          peakSyncEnergy = 0;
         }
       } else if (rxState === 'DATA') {
         // Accumulate energy across the entire symbol duration (Matched Filter)
