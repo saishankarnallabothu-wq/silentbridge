@@ -323,11 +323,15 @@ class SilentBridgeMesh {
     // 2. Cloud Mesh MQTT (Cross-Device across anywhere in the world)
     if (this.mqttClient && this.cloudConnected) {
       try {
-        // Strip heavy base64 voice audio from MQTT packet so message never exceeds broker size limits
+        // Support voice audio memos up to 200KB over WSS MQTT
         const mqttPacket = { ...packetObj };
-        if (mqttPacket.voiceAudio && mqttPacket.voiceAudio.length > 25000) {
+        if (mqttPacket.voiceAudio && mqttPacket.voiceAudio.length > 200000) {
           mqttPacket.hasVoice = true;
           mqttPacket.voiceAudio = null;
+        }
+        if (mqttPacket.ackVoiceAudio && mqttPacket.ackVoiceAudio.length > 200000) {
+          mqttPacket.hasAckVoice = true;
+          mqttPacket.ackVoiceAudio = null;
         }
 
         const mqttPayload = JSON.stringify(mqttPacket);

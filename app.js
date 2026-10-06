@@ -324,6 +324,10 @@ document.addEventListener("DOMContentLoaded", () => {
       btnRecordVoice.innerText = "🎙️ Hold/Tap to Record Voice";
       btnRecordVoice.className = "bg-white hover:bg-neutral-200 text-black text-xs font-bold py-2 px-3 rounded-md flex items-center gap-1.5 transition";
     }
+    const btnClearVoice = document.getElementById("btnClearVoice");
+    if (btnClearVoice) btnClearVoice.classList.add("hidden");
+    const voiceAttachedBadge = document.getElementById("voiceAttachedBadge");
+    if (voiceAttachedBadge) voiceAttachedBadge.classList.add("hidden");
 
     selectedType = 1;
     document.querySelectorAll(".type-btn").forEach((btn, index) => {
@@ -509,61 +513,426 @@ document.addEventListener("DOMContentLoaded", () => {
     sosBanner.classList.add("hidden");
   });
 
-  // Voice Recording Module
+  // ==========================================
+  // 🎙️ TACTICAL VOICE ENGINE & SYNTHESIS (100% OFFLINE CAPABLE)
+  // ==========================================
+  let isVoiceAlertsEnabled = true;
+  const TacticalSpeech = {
+    speak(text, priority = false) {
+      if (!isVoiceAlertsEnabled || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+      try {
+        if (priority) window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.05;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+        const voices = window.speechSynthesis.getVoices();
+        if (voices && voices.length > 0) {
+          const enVoice = voices.find(v => v.lang && v.lang.startsWith('en')) || voices[0];
+          if (enVoice) utterance.voice = enVoice;
+        }
+        window.speechSynthesis.speak(utterance);
+      } catch (e) {
+        console.warn("Tactical speech note:", e);
+      }
+    }
+  };
+
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => {
+      try { window.speechSynthesis.getVoices(); } catch (e) {}
+    };
+  }
+
+  // Header Voice Alerts Toggle
+  const btnToggleVoiceAlerts = document.getElementById("btnToggleVoiceAlerts");
+  const voiceAlertDot = document.getElementById("voiceAlertDot");
+  const voiceAlertText = document.getElementById("voiceAlertText");
+  if (btnToggleVoiceAlerts) {
+    btnToggleVoiceAlerts.addEventListener("click", () => {
+      isVoiceAlertsEnabled = !isVoiceAlertsEnabled;
+      if (isVoiceAlertsEnabled) {
+        if (voiceAlertDot) voiceAlertDot.className = "w-2 h-2 rounded-full bg-emerald-400";
+        if (voiceAlertText) {
+          voiceAlertText.className = "text-emerald-300 font-bold text-[10px]";
+          voiceAlertText.innerText = "VOICE: ON";
+        }
+        TacticalSpeech.speak("Tactical voice alerts active.", true);
+      } else {
+        if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+        if (voiceAlertDot) voiceAlertDot.className = "w-2 h-2 rounded-full bg-neutral-500";
+        if (voiceAlertText) {
+          voiceAlertText.className = "text-neutral-400 font-bold text-[10px]";
+          voiceAlertText.innerText = "VOICE: MUTED";
+        }
+      }
+    });
+  }
+
+  // ==========================================
+  // 🎙️ SURVIVOR SITUATIONAL VOICE RECORDING
+  // ==========================================
   function setupVoiceRecorder() {
     const btnRecordVoice = document.getElementById("btnRecordVoice");
+    const btnClearVoice = document.getElementById("btnClearVoice");
     const audioPreview = document.getElementById("audioPreview");
     const recordStatus = document.getElementById("recordStatus");
     const recordTimer = document.getElementById("recordTimer");
+    const voiceAttachedBadge = document.getElementById("voiceAttachedBadge");
+
+    if (!btnRecordVoice) return;
 
     btnRecordVoice.addEventListener("click", async () => {
       await modem.initAudio();
       if (!isRecording) {
         recordedChunks = [];
-        const stream = modem.micStream || await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
+        try {
+          const stream = modem.micStream || await navigator.mediaDevices.getUserMedia({ audio: true });
+          let recorderOptions = {};
+          if (typeof MediaRecorder !== 'undefined') {
+            if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+              recorderOptions = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 24000 };
+            } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+              recorderOptions = { mimeType: 'audio/webm', audioBitsPerSecond: 24000 };
+            } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+              recorderOptions = { mimeType: 'audio/mp4', audioBitsPerSecond: 24000 };
+            }
+          }
+          mediaRecorder = new MediaRecorder(stream, recorderOptions);
+        } catch (micErr) {
+          console.warn("Voice recorder mic error:", micErr);
+          if (recordStatus) recordStatus.innerText = "Microphone access denied.";
+          return;
+        }
 
         mediaRecorder.ondataavailable = (e) => {
           if (e.data.size > 0) recordedChunks.push(e.data);
         };
 
         mediaRecorder.onstop = () => {
-          const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+          const mime = (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
+          const blob = new Blob(recordedChunks, { type: mime });
           const audioURL = URL.createObjectURL(blob);
-          audioPreview.src = audioURL;
-          audioPreview.classList.remove("hidden");
+          if (audioPreview) {
+            audioPreview.src = audioURL;
+            audioPreview.classList.remove("hidden");
+          }
 
           const reader = new FileReader();
           reader.readAsDataURL(blob);
           reader.onloadend = () => {
             senderVoiceBase64 = reader.result;
-            const recordTimestamp = new Date().toLocaleTimeString();
-            recordStatus.innerText = `✓ Voice recorded at ${recordTimestamp} and attached to SOS.`;
-            recordStatus.className = "text-[10px] text-white mt-1.5";
+            const recordTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            if (recordStatus) {
+              recordStatus.innerText = `✓ Voice note recorded at ${recordTimestamp} and attached to SOS.`;
+              recordStatus.className = "text-[10px] text-emerald-300 font-bold mt-1.5";
+            }
+            if (voiceAttachedBadge) voiceAttachedBadge.classList.remove("hidden");
+            if (btnClearVoice) btnClearVoice.classList.remove("hidden");
+            TacticalSpeech.speak("Voice memo attached to emergency beacon.");
           };
         };
 
         mediaRecorder.start();
         isRecording = true;
         btnRecordVoice.innerText = "⏹️ Stop Recording";
-        btnRecordVoice.className = "bg-white text-black text-xs font-bold py-2 px-3 rounded-md flex items-center gap-1.5 transition animate-pulse";
+        btnRecordVoice.className = "bg-red-500 text-white text-xs font-bold py-2 px-3 rounded-md flex items-center gap-1.5 transition animate-pulse";
+        if (recordStatus) {
+          recordStatus.innerText = "Recording voice memo (max 5s)... Speak clearly.";
+          recordStatus.className = "text-[10px] text-amber-300 font-bold mt-1.5 animate-pulse";
+        }
 
         let seconds = 0;
         recordTimerInterval = setInterval(() => {
           seconds++;
-          recordTimer.innerText = `00:0${seconds}`;
-          if (seconds >= 6) btnRecordVoice.click();
+          if (recordTimer) recordTimer.innerText = `00:0${seconds}`;
+          if (seconds >= 5) {
+            if (isRecording) btnRecordVoice.click();
+          }
         }, 1000);
       } else {
-        mediaRecorder.stop();
+        try {
+          if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+          }
+        } catch (e) {}
         isRecording = false;
         clearInterval(recordTimerInterval);
         btnRecordVoice.innerText = "🔄 Re-Record Voice";
         btnRecordVoice.className = "bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold py-2 px-3 rounded-md flex items-center gap-1.5 transition";
       }
     });
+
+    if (btnClearVoice) {
+      btnClearVoice.addEventListener("click", () => {
+        senderVoiceBase64 = null;
+        recordedChunks = [];
+        if (audioPreview) {
+          audioPreview.src = "";
+          audioPreview.classList.add("hidden");
+        }
+        btnClearVoice.classList.add("hidden");
+        if (voiceAttachedBadge) voiceAttachedBadge.classList.add("hidden");
+        if (recordStatus) {
+          recordStatus.innerText = "Record a 5-second situational voice clip.";
+          recordStatus.className = "text-[10px] text-neutral-500 mt-1.5";
+        }
+        if (recordTimer) recordTimer.innerText = "00:00";
+        btnRecordVoice.innerText = "🎙️ Record Voice Note";
+        btnRecordVoice.className = "bg-white hover:bg-neutral-200 text-black text-xs font-bold py-2 px-3 rounded-md flex items-center gap-1.5 transition";
+      });
+    }
   }
   setupVoiceRecorder();
+
+  // ==========================================
+  // 🎙️ RESCUER VOICE INSTRUCTION RECORDER (FOR ACK)
+  // ==========================================
+  let rescuerVoiceBase64 = null;
+  let rescuerMediaRecorder = null;
+  let rescuerRecordedChunks = [];
+  let isRescuerRecording = false;
+  let rescuerRecordTimerInterval = null;
+
+  function setupRescuerVoiceRecorder() {
+    const btnRecord = document.getElementById("btnRecordRescuerVoice");
+    const btnClear = document.getElementById("btnClearRescuerVoice");
+    const preview = document.getElementById("rescuerAudioPreview");
+    const timer = document.getElementById("rescuerRecordTimer");
+    const badge = document.getElementById("rescuerVoiceBadge");
+
+    if (!btnRecord) return;
+
+    btnRecord.addEventListener("click", async () => {
+      await modem.initAudio();
+      if (!isRescuerRecording) {
+        rescuerRecordedChunks = [];
+        try {
+          const stream = modem.micStream || await navigator.mediaDevices.getUserMedia({ audio: true });
+          let recorderOptions = {};
+          if (typeof MediaRecorder !== 'undefined') {
+            if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+              recorderOptions = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 24000 };
+            } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+              recorderOptions = { mimeType: 'audio/webm', audioBitsPerSecond: 24000 };
+            }
+          }
+          rescuerMediaRecorder = new MediaRecorder(stream, recorderOptions);
+        } catch (e) {
+          console.warn("Rescuer mic access note:", e);
+          return;
+        }
+
+        rescuerMediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) rescuerRecordedChunks.push(e.data);
+        };
+
+        rescuerMediaRecorder.onstop = () => {
+          const mime = (rescuerMediaRecorder && rescuerMediaRecorder.mimeType) || 'audio/webm';
+          const blob = new Blob(rescuerRecordedChunks, { type: mime });
+          const audioURL = URL.createObjectURL(blob);
+          if (preview) {
+            preview.src = audioURL;
+            preview.classList.remove("hidden");
+          }
+
+          const reader = new FileReader();
+          reader.readAsDataURL(blob);
+          reader.onloadend = () => {
+            rescuerVoiceBase64 = reader.result;
+            if (badge) badge.classList.remove("hidden");
+            if (btnClear) btnClear.classList.remove("hidden");
+            TacticalSpeech.speak("Rescuer voice instruction attached to ACK.");
+          };
+        };
+
+        rescuerMediaRecorder.start();
+        isRescuerRecording = true;
+        btnRecord.innerText = "⏹️ Stop (Recording)";
+        btnRecord.className = "bg-red-500 text-white text-xs font-bold py-1.5 px-3 rounded-md flex items-center gap-1.5 animate-pulse";
+
+        let seconds = 0;
+        rescuerRecordTimerInterval = setInterval(() => {
+          seconds++;
+          if (timer) timer.innerText = `00:0${seconds}`;
+          if (seconds >= 5) {
+            if (isRescuerRecording) btnRecord.click();
+          }
+        }, 1000);
+      } else {
+        try {
+          if (rescuerMediaRecorder && rescuerMediaRecorder.state !== 'inactive') {
+            rescuerMediaRecorder.stop();
+          }
+        } catch (e) {}
+        isRescuerRecording = false;
+        clearInterval(rescuerRecordTimerInterval);
+        btnRecord.innerText = "🔄 Re-Record Instruction";
+        btnRecord.className = "bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold py-1.5 px-3 rounded-md flex items-center gap-1.5 border border-white/30 transition";
+      }
+    });
+
+    if (btnClear) {
+      btnClear.addEventListener("click", () => {
+        rescuerVoiceBase64 = null;
+        rescuerRecordedChunks = [];
+        if (preview) {
+          preview.src = "";
+          preview.classList.add("hidden");
+        }
+        btnClear.classList.add("hidden");
+        if (badge) badge.classList.add("hidden");
+        if (timer) timer.innerText = "00:00";
+        btnRecord.innerText = "🎙️ Record Instruction (5s)";
+      });
+    }
+  }
+  setupRescuerVoiceRecorder();
+
+  // ==========================================
+  // 🎙️ HANDS-FREE VOICE SOS TRIGGER (VOICE RECOGNITION)
+  // ==========================================
+  let isHandsFreeVoiceActive = false;
+  let speechRecognizer = null;
+  let voiceSosLastTriggerTime = 0;
+
+  function setupHandsFreeVoiceSos() {
+    const btnToggleVoiceSos = document.getElementById("btnToggleVoiceSos");
+    const voiceSosDot = document.getElementById("voiceSosDot");
+    const voiceSosBtnText = document.getElementById("voiceSosBtnText");
+    const voiceSosBadge = document.getElementById("voiceSosBadge");
+    const voiceSosDetectedAlert = document.getElementById("voiceSosDetectedAlert");
+    const voiceSosDetectedText = document.getElementById("voiceSosDetectedText");
+
+    if (!btnToggleVoiceSos) return;
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    function handleVoiceSosTrigger(matchedWord) {
+      const now = Date.now();
+      if (now - voiceSosLastTriggerTime < 8000) return; // Prevent rapid duplicate re-triggers
+      voiceSosLastTriggerTime = now;
+
+      console.log(`🎙️ HANDS-FREE VOICE SOS TRIGGERED by word: "${matchedWord}"`);
+      if (voiceSosDetectedAlert && voiceSosDetectedText) {
+        voiceSosDetectedText.innerText = `Keyword "${matchedWord.toUpperCase()}" detected! Auto-dispatching emergency SOS...`;
+        voiceSosDetectedAlert.classList.remove("hidden");
+        setTimeout(() => voiceSosDetectedAlert.classList.add("hidden"), 6000);
+      }
+
+      TacticalSpeech.speak(`Distress keyword detected: ${matchedWord}. Emergency SOS beacon transmitting now.`, true);
+
+      // Execute Immediate Panic SOS Dispatch!
+      executeSosDispatch({
+        isPanic: true,
+        customNote: `VOICE SOS: "${matchedWord.toUpperCase()}"`
+      });
+    }
+
+    function startRecognition() {
+      if (!SpeechRecognition) {
+        console.warn("Web Speech API not available on this browser, activating acoustic scream detector fallback.");
+        startAcousticVoiceFallback();
+        return;
+      }
+
+      try {
+        speechRecognizer = new SpeechRecognition();
+        speechRecognizer.continuous = true;
+        speechRecognizer.interimResults = true;
+        speechRecognizer.lang = 'en-US';
+
+        speechRecognizer.onresult = (event) => {
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript.toLowerCase();
+            const keywords = ['help', 'sos', 'emergency', 'save me', 'trapped', 'fire', 'flood', 'rescue', 'danger'];
+            const matched = keywords.find(kw => transcript.includes(kw));
+            if (matched) {
+              handleVoiceSosTrigger(matched);
+              break;
+            }
+          }
+        };
+
+        speechRecognizer.onerror = (err) => {
+          console.warn("Speech recognition notice:", err.error);
+          if (isHandsFreeVoiceActive && err.error !== 'not-allowed') {
+            setTimeout(() => {
+              if (isHandsFreeVoiceActive) {
+                try { speechRecognizer.start(); } catch (e) {}
+              }
+            }, 1000);
+          }
+        };
+
+        speechRecognizer.onend = () => {
+          if (isHandsFreeVoiceActive) {
+            setTimeout(() => {
+              if (isHandsFreeVoiceActive) {
+                try { speechRecognizer.start(); } catch (e) {}
+              }
+            }, 300);
+          }
+        };
+
+        speechRecognizer.start();
+      } catch (err) {
+        console.warn("SpeechRecognizer start notice:", err);
+      }
+    }
+
+    // High energy acoustic volume scream detector as fallback / complement
+    let screamCheckInterval = null;
+    function startAcousticVoiceFallback() {
+      if (screamCheckInterval) clearInterval(screamCheckInterval);
+      screamCheckInterval = setInterval(() => {
+        if (!isHandsFreeVoiceActive || !modem || !modem.analyser) return;
+        const data = new Uint8Array(modem.analyser.frequencyBinCount);
+        modem.analyser.getByteFrequencyData(data);
+        // Measure mid-speech frequencies (300Hz - 2500Hz, bins 15 to 110)
+        let sum = 0, count = 0;
+        for (let i = 15; i < 110; i++) {
+          sum += data[i];
+          count++;
+        }
+        const avg = sum / count;
+        if (avg > 185) { // Loud yell/scream detected
+          handleVoiceSosTrigger("LOUD SCREAM / SHOUT");
+        }
+      }, 350);
+    }
+
+    btnToggleVoiceSos.addEventListener("click", async () => {
+      await modem.initAudio();
+      isHandsFreeVoiceActive = !isHandsFreeVoiceActive;
+
+      if (isHandsFreeVoiceActive) {
+        await modem.startListening();
+        updateMicStatusUi();
+        startRecognition();
+        startAcousticVoiceFallback();
+
+        voiceSosDot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+        voiceSosBtnText.innerText = "VOICE SOS: ACTIVE (SAY 'HELP' OR 'SOS')";
+        voiceSosBadge.className = "text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-500/50 px-2 py-0.5 rounded font-bold font-mono uppercase animate-pulse";
+        voiceSosBadge.innerText = "LISTENING FOR 'HELP'";
+        TacticalSpeech.speak("Hands free voice SOS listener active. Say Help or S O S to trigger emergency broadcast.");
+      } else {
+        if (speechRecognizer) {
+          try { speechRecognizer.stop(); } catch (e) {}
+          speechRecognizer = null;
+        }
+        if (screamCheckInterval) clearInterval(screamCheckInterval);
+
+        voiceSosDot.className = "w-2 h-2 rounded-full bg-neutral-500";
+        voiceSosBtnText.innerText = "ACTIVATE HANDS-FREE VOICE SOS";
+        voiceSosBadge.className = "text-[9px] bg-neutral-950 text-neutral-400 border border-white/20 px-2 py-0.5 rounded font-bold font-mono uppercase";
+        voiceSosBadge.innerText = "STANDBY / OFF";
+        TacticalSpeech.speak("Hands free voice listener disabled.");
+      }
+    });
+  }
+  setupHandsFreeVoiceSos();
 
   document.querySelectorAll(".type-btn").forEach(btn => {
     btn.addEventListener("click", (e) => {
@@ -574,57 +943,60 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // 1-Tap Instant Panic Button with Immediate Non-Blocking Audio Output
-  document.getElementById("btnInstantPanic").addEventListener("click", async () => {
+  // ==========================================
+  // 🚨 CENTRALIZED SOS DISPATCHER: LIVE GPS + VOICE ATTACHMENT
+  // ==========================================
+  async function executeSosDispatch({ isPanic = false, customNote = null, customType = null } = {}) {
     await modem.initAudio();
     if (currentRole === 'sender') {
       await modem.startListening();
       updateMicStatusUi();
     }
 
-    const btn = document.getElementById("btnInstantPanic");
-    const originalHtml = btn.innerHTML;
-    btn.innerHTML = `<span>🔊</span> BROADCASTING ACOUSTIC SOUND...`;
-
-    // Immediate coordinates (0ms latency, prevents mobile audio gesture expiry)
     let loc = (currentLat && currentLon)
       ? { lat: currentLat, lon: currentLon, accuracy: currentAccuracy || 15 }
       : getFallbackLocation();
 
     const nameInput = document.getElementById("txtName");
+    const textInput = document.getElementById("txtMessage");
     const survivorName = nameInput && nameInput.value.trim() ? nameInput.value.trim() : "Survivor";
+    const text = customNote || (textInput ? textInput.value.slice(0, 15) : "") || (isPanic ? "CRITICAL PANIC SOS" : "Emergency SOS");
+    const type = customType !== null ? customType : (isPanic ? 2 : selectedType);
     const generatedId = Math.floor(1000 + Math.random() * 9000);
     const sentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     myLastSentMsgId = generatedId;
     try { sessionStorage.setItem("silentbridge_last_msg_id", String(generatedId)); } catch (e) {}
 
+    // Packet ALWAYS preserves survivor's recorded voice note if available!
     const packetObj = {
       msgId: generatedId,
       name: survivorName,
-      type: 2,
+      type: type,
       lat: Number(loc.lat),
       lon: Number(loc.lon),
       accuracy: Number(loc.accuracy),
       ttl: 3,
-      text: "CRITICAL PANIC SOS",
-      voiceAudio: null,
+      text: text,
+      voiceAudio: senderVoiceBase64 || null,
       timestamp: sentTime,
-      isPanic: true
+      isPanic: isPanic
     };
 
     const acousticBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
       ? PacketEngine.encodeAcoustic(packetObj)
       : PacketEngine.encode(packetObj);
 
-    // Transmit over speaker immediately at full loudspeaker volume!
+    // 1. Acoustic Speaker Burst (Works 100% offline without cellular or Wi-Fi)
     await modem.transmitPacket(acousticBytes);
+
+    // 2. Multi-Transport Cloud Mesh (Works worldwide across devices)
     broadcastMeshPacket(packetObj);
+
+    // 3. Retry loop until Rescue HQ confirms with ACK
     startBeaconRetryLoop(packetObj);
 
-    btn.innerHTML = originalHtml;
-
-    // Post-transmission: start listening on microphone so sender can receive Rescue HQ's acoustic ACK!
+    // Post-transmission: activate microphone to receive Base Station's acoustic ACK!
     if (currentRole === 'sender') {
       modem.startListening();
       updateMicStatusUi();
@@ -639,72 +1011,28 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    resetSenderInputs();
+    return packetObj;
+  }
+
+  // 1-Tap Instant Panic Button with Immediate Non-Blocking Audio Output
+  document.getElementById("btnInstantPanic").addEventListener("click", async () => {
+    const btn = document.getElementById("btnInstantPanic");
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = `<span>🔊</span> BROADCASTING ACOUSTIC SOUND...`;
+
+    await executeSosDispatch({ isPanic: true });
+
+    btn.innerHTML = originalHtml;
   });
 
   // Standard Transmit Action with Immediate Non-Blocking Audio Output
   document.getElementById("btnSend").addEventListener("click", async () => {
-    await modem.initAudio();
-    if (currentRole === 'sender') {
-      await modem.startListening();
-      updateMicStatusUi();
-    }
-
     const btn = document.getElementById("btnSend");
     btn.innerText = "🔊 BROADCASTING ACOUSTIC SOUND...";
 
-    let loc = (currentLat && currentLon)
-      ? { lat: currentLat, lon: currentLon, accuracy: currentAccuracy || 15 }
-      : getFallbackLocation();
-
-    const nameInput = document.getElementById("txtName");
-    const textInput = document.getElementById("txtMessage");
-    const survivorName = nameInput && nameInput.value.trim() ? nameInput.value.trim() : "Survivor";
-    const text = textInput ? textInput.value.slice(0, 15) : "";
-    const generatedId = Math.floor(1000 + Math.random() * 9000);
-    const sentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-    myLastSentMsgId = generatedId;
-    try { sessionStorage.setItem("silentbridge_last_msg_id", String(generatedId)); } catch (e) {}
-
-    const packetObj = {
-      msgId: generatedId,
-      name: survivorName,
-      type: selectedType,
-      lat: Number(loc.lat),
-      lon: Number(loc.lon),
-      accuracy: Number(loc.accuracy),
-      ttl: 3,
-      text: text || "Emergency SOS",
-      voiceAudio: senderVoiceBase64,
-      timestamp: sentTime,
-      isPanic: false
-    };
-
-    const acousticBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
-      ? PacketEngine.encodeAcoustic(packetObj)
-      : PacketEngine.encode(packetObj);
-
-    await modem.transmitPacket(acousticBytes);
-    broadcastMeshPacket(packetObj);
-    startBeaconRetryLoop(packetObj);
+    await executeSosDispatch({ isPanic: false });
 
     btn.innerText = "📢 BROADCAST WITH NOTE / AUDIO";
-
-    if (currentRole === 'sender') {
-      modem.startListening();
-      updateMicStatusUi();
-    }
-
-    getAccurateDeviceLocation().then(fresh => {
-      if (fresh && activePendingPacket) {
-        activePendingPacket.lat = Number(fresh.lat);
-        activePendingPacket.lon = Number(fresh.lon);
-        activePendingPacket.accuracy = Number(fresh.accuracy);
-      }
-    });
-
-    resetSenderInputs();
   });
 
   // Offline Acoustic Test Controls
@@ -808,9 +1136,11 @@ document.addEventListener("DOMContentLoaded", () => {
       type: 0xFF,
       isBroadcast: isBroadcast,
       timestamp: ackTime,
-      _room: targetRoom
+      _room: targetRoom,
+      ackVoiceAudio: rescuerVoiceBase64 || null
     });
     console.log(`🌐 Mesh ACK packet broadcasted for ${labelId} (Room: #${targetRoom})`);
+    TacticalSpeech.speak(`Rescue ACK dispatched for ${labelId}. Help is confirmed.`, false);
 
     // 3. Synchronize All UI Elements
     if (triggerBtn) {
@@ -911,6 +1241,20 @@ document.addEventListener("DOMContentLoaded", () => {
           applySenderGreenPositiveState(packet.msgId || myLastSentMsgId, currentTime);
           if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 500]);
           modem.playAlarmChime();
+
+          // Tactical Voice confirmation readout:
+          TacticalSpeech.speak("Rescue confirmed! Base station has acknowledged your distress beacon. Emergency responders are en route. Stay safe.", true);
+
+          // If Rescuer sent a voice instruction memo with the ACK:
+          if (packet.ackVoiceAudio) {
+            const voiceBox = document.getElementById("senderRescuerVoiceBox");
+            const audioEl = document.getElementById("senderRescuerAudio");
+            if (voiceBox && audioEl) {
+              audioEl.src = packet.ackVoiceAudio;
+              voiceBox.classList.remove("hidden");
+              try { audioEl.play(); } catch (e) {}
+            }
+          }
         }
       }
       return;
@@ -932,6 +1276,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const validLon = Number(packet.lon) || 78.4867;
       const validAcc = Number(packet.accuracy) || 15;
 
+      // Tactical Voice Announcement on HQ
+      TacticalSpeech.speak(`Emergency alert. Distress beacon received from ${survivorName}. Incident type: ${typeName}. Coordinates plotted.`);
+
       // Update Target Beacon ID Input in Console
       const txtBeaconId = document.getElementById("txtTargetBeaconId");
       if (txtBeaconId) txtBeaconId.value = packet.msgId;
@@ -940,11 +1287,23 @@ document.addEventListener("DOMContentLoaded", () => {
       const emptyFeed = document.getElementById("feedEmptyState");
       if (emptyFeed) emptyFeed.classList.add("hidden");
 
-      // Update Top Banner
+      // Update Top Alert Banner
       document.getElementById("sosTime").innerText = currentTime;
       document.getElementById("sosTitle").innerText = `🚨 ${typeName.toUpperCase()} FROM ${survivorName.toUpperCase()} (#${packet.msgId})!`;
       document.getElementById("sosSubtitle").innerText = `GPS: ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)`;
       sosBanner.classList.remove("hidden");
+
+      // Update Top Banner Voice Memo
+      const bannerVoiceSec = document.getElementById("bannerVoiceSection");
+      const bannerVoiceAudio = document.getElementById("bannerVoiceAudio");
+      if (bannerVoiceSec && bannerVoiceAudio) {
+        if (packet.voiceAudio) {
+          bannerVoiceAudio.src = packet.voiceAudio;
+          bannerVoiceSec.classList.remove("hidden");
+        } else {
+          bannerVoiceSec.classList.add("hidden");
+        }
+      }
 
       if (btnBannerSendAck) {
         btnBannerSendAck.disabled = false;
@@ -991,6 +1350,7 @@ document.addEventListener("DOMContentLoaded", () => {
               <span><b>Survivor:</b> ${survivorName}</span><br>
               <span><b>Time:</b> ${currentTime}</span><br>
               <span><b>GPS:</b> ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)</span><br>
+              ${packet.voiceAudio ? '<span style="color:#059669; font-weight:bold;">🎙️ Situational Voice Memo Attached</span><br>' : ''}
               <a href="${googleMapsNavUrl}" target="_blank" style="color: #0066cc; text-decoration: underline; font-weight: bold; margin-top: 4px; display: inline-block;">🗺️ Open Turn-by-Turn Route</a>
               <button id="btnMapPopupAck_${packet.msgId}" style="margin-top: 8px; width: 100%; background: #10b981; color: black; font-weight: 900; padding: 6px 10px; border-radius: 6px; border: none; cursor: pointer; text-transform: uppercase;">
                 🛡️ SEND RESCUE ACK ➔
@@ -1027,9 +1387,20 @@ document.addEventListener("DOMContentLoaded", () => {
       let voicePlayerHtml = '';
       if (packet.voiceAudio) {
         voicePlayerHtml = `
-          <div class="bg-black p-2 rounded border border-white/20 flex flex-col gap-1">
-            <span class="text-[10px] text-white font-bold font-mono">🎙️ ${survivorName.toUpperCase()}'S VOICE NOTE (${currentTime}):</span>
-            <audio controls src="${packet.voiceAudio}" class="w-full h-8"></audio>
+          <div class="bg-black p-2.5 rounded-lg border border-emerald-400/50 flex flex-col gap-1.5 shadow-inner">
+            <div class="flex justify-between items-center">
+              <span class="text-[10px] text-emerald-300 font-bold font-mono flex items-center gap-1">
+                <span>🎙️</span> ${survivorName.toUpperCase()}'S VOICE NOTE (${currentTime}):
+              </span>
+              <span class="text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-500/40 px-1 rounded font-mono font-bold">AUDIO ATTACHED</span>
+            </div>
+            <audio controls src="${packet.voiceAudio}" class="w-full h-7 rounded"></audio>
+          </div>
+        `;
+      } else if (packet.hasVoice) {
+        voicePlayerHtml = `
+          <div class="bg-neutral-950 p-2 rounded border border-white/20 text-[10px] text-neutral-400 font-mono">
+            🎙️ Voice memo recorded by survivor (audio stripped over low-bandwidth link).
           </div>
         `;
       }
@@ -1049,12 +1420,22 @@ document.addEventListener("DOMContentLoaded", () => {
           <a href="${googleMapsNavUrl}" target="_blank" class="bg-white hover:bg-neutral-200 text-black font-bold py-1.5 px-3 rounded flex items-center gap-1 transition text-center justify-center">
             🗺️ Route
           </a>
+          <button class="vocalize-btn-${packet.msgId} bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-mono font-bold py-1.5 px-2.5 rounded text-[11px] border border-white/20 transition flex items-center gap-1" title="Vocalize telemetry using Tactical Voice">
+            <span>🔊</span> Speak
+          </button>
           <button class="ack-btn card-ack-btn-${packet.msgId} flex-1 bg-emerald-400 hover:bg-emerald-300 text-black font-black py-1.5 px-3 rounded transition uppercase tracking-wider shadow active:scale-95">
             🛡️ SEND RESCUE ACK ➔
           </button>
         </div>
       `;
       feed.prepend(card);
+
+      const vocalizeBtn = card.querySelector(`.vocalize-btn-${packet.msgId}`);
+      if (vocalizeBtn) {
+        vocalizeBtn.addEventListener("click", () => {
+          TacticalSpeech.speak(`Incident report for beacon number ${packet.msgId}. Survivor: ${survivorName}. Category: ${typeName}. Note: ${packet.text || "Emergency SOS"}. Accuracy within ${validAcc} meters.`, true);
+        });
+      }
 
       const ackBtn = card.querySelector(`.card-ack-btn-${packet.msgId}`);
       if (ackBtn) {

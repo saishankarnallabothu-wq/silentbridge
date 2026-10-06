@@ -182,8 +182,12 @@
       </button>
     </div>
 
-    <!-- Mesh Sync & Status Badges -->
+    <!-- Mesh Sync, Voice Alerts & Status Badges -->
     <div class="flex items-center gap-2">
+      <button id="btnToggleVoiceAlerts" class="flex items-center gap-1.5 bg-neutral-950 hover:bg-neutral-900 border border-white/30 px-2.5 py-1 rounded-md text-xs font-mono transition" title="Toggle Tactical Voice Audio Announcements">
+        <span id="voiceAlertDot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        <span id="voiceAlertText" class="text-emerald-300 font-bold text-[10px]">VOICE: ON</span>
+      </button>
       <button id="btnOpenMeshModal" class="flex items-center gap-1.5 bg-neutral-950 hover:bg-neutral-900 border border-white/30 px-2.5 py-1 rounded-md text-xs font-mono transition" title="Network Mesh Settings & Device Pairing">
         <span id="meshStatusDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
         <span id="meshStatusText" class="text-emerald-400 font-bold text-[10px]">MESH: ONLINE</span>
@@ -274,6 +278,16 @@
           <p id="sosSubtitle" class="text-[11px] text-neutral-400 mt-0.5">
             Target location plotted on tactical map. Review telemetry below.
           </p>
+          <!-- Survivor Voice Memo in Alert Banner -->
+          <div id="bannerVoiceSection" class="hidden mt-2 p-2 bg-black rounded-lg border border-emerald-400/60 flex flex-col gap-1 max-w-sm">
+            <div class="flex justify-between items-center">
+              <span class="text-[10px] text-emerald-300 font-bold font-mono flex items-center gap-1">
+                <span>🎙️</span> SURVIVOR VOICE MEMO ATTACHED
+              </span>
+              <span class="text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-500/40 px-1 rounded font-mono">AUDIO MEMO</span>
+            </div>
+            <audio id="bannerVoiceAudio" controls class="w-full h-7 rounded"></audio>
+          </div>
         </div>
       </div>
       <div class="flex flex-col sm:flex-row items-end sm:items-center gap-2 flex-shrink-0">
@@ -300,20 +314,46 @@
         </div>
 
         <!-- 1-TAP INSTANT PANIC BUTTON -->
-        <div class="mb-4 p-3.5 bg-neutral-900 border-2 border-white rounded-xl panic-glow">
+        <div class="mb-3.5 p-3.5 bg-neutral-900 border-2 border-white rounded-xl panic-glow">
           <div class="flex items-center justify-between mb-2">
             <span class="text-[10px] font-black text-white tracking-wider flex items-center gap-1 font-mono">
               <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
               INSTANT PANIC TRANSMISSION
             </span>
-            <span class="text-[9px] bg-white text-black px-2 py-0.5 rounded font-bold">1-TAP DISPATCH</span>
+            <span class="text-[9px] bg-white text-black px-2 py-0.5 rounded font-bold font-mono">1-TAP DISPATCH</span>
           </div>
           <button id="btnInstantPanic" class="w-full bg-white hover:bg-neutral-200 text-black font-black py-4 px-4 rounded-lg text-sm md:text-base tracking-widest shadow-xl flex items-center justify-center gap-2 uppercase transition-all duration-200 active:scale-95">
             <span>🚨</span> TRANSMIT IMMEDIATE EMERGENCY GPS
           </button>
           <p class="text-[10px] text-neutral-400 text-center mt-2 font-medium">
-            Broadcasts via acoustic speaker burst (works offline without network) & cloud mesh. Keep media volume at MAX.
+            Broadcasts acoustic loudspeaker tone & cloud mesh. Transmits live GPS fix + attached voice memo.
           </p>
+        </div>
+
+        <!-- 🎙️ HANDS-FREE VOICE SOS TRIGGER (VOICE RECOGNITION) -->
+        <div id="voiceSosTriggerBox" class="mb-4 bg-neutral-900 border border-emerald-400/50 p-3.5 rounded-xl transition-all shadow-lg">
+          <div class="flex justify-between items-center mb-1.5">
+            <span class="text-[10px] font-black text-white tracking-wider flex items-center gap-1.5 font-mono">
+              <span class="text-sm">🎙️</span>
+              HANDS-FREE VOICE SOS TRIGGER
+            </span>
+            <span id="voiceSosBadge" class="text-[9px] bg-neutral-950 text-neutral-400 border border-white/20 px-2 py-0.5 rounded font-bold font-mono uppercase">
+              STANDBY / OFF
+            </span>
+          </div>
+          <p class="text-[10px] text-neutral-300 mb-2.5 font-medium leading-relaxed">
+            Trapped or unable to touch screen? Speak <b class="text-emerald-300">"HELP"</b>, <b class="text-emerald-300">"SOS"</b>, or <b class="text-emerald-300">"EMERGENCY"</b> aloud to automatically trigger panic dispatch.
+          </p>
+          <div class="flex items-center gap-2">
+            <button id="btnToggleVoiceSos" type="button" class="w-full bg-neutral-800 hover:bg-neutral-700 text-emerald-300 border border-emerald-400/60 font-bold font-mono text-xs py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition active:scale-95 shadow">
+              <span id="voiceSosDot" class="w-2 h-2 rounded-full bg-neutral-500"></span>
+              <span id="voiceSosBtnText">ACTIVATE HANDS-FREE VOICE SOS</span>
+            </button>
+          </div>
+          <div id="voiceSosDetectedAlert" class="hidden mt-2 p-2 bg-emerald-950/90 border border-emerald-400 rounded-lg text-[10px] text-emerald-300 font-mono font-bold flex items-center gap-2 animate-pulse">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            <span id="voiceSosDetectedText">Voice keyword detected! Auto-dispatching emergency SOS...</span>
+          </div>
         </div>
 
         <!-- SURVIVOR NAME INPUT -->
@@ -339,18 +379,26 @@
         </div>
 
         <!-- Voice Recording Module -->
-        <div id="voiceModuleBox" class="mb-3 bg-neutral-900 p-3 rounded-lg border border-white/20 transition-colors">
+        <div id="voiceModuleBox" class="mb-3 bg-neutral-900 p-3.5 rounded-xl border border-white/20 transition-colors">
           <div class="flex justify-between items-center mb-2">
-            <label class="text-[10px] font-black text-neutral-400 tracking-wider uppercase font-mono">VICTIM AUDIO RECORDING</label>
-            <span id="recordTimer" class="text-xs font-mono text-white font-bold">00:00</span>
+            <label class="text-[10px] font-black text-neutral-400 tracking-wider uppercase font-mono flex items-center gap-1">
+              <span>🎙️</span> SITUATIONAL VOICE MEMO (5 SEC)
+            </label>
+            <div class="flex items-center gap-2">
+              <span id="voiceAttachedBadge" class="hidden text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-500/50 px-1.5 py-0.5 rounded font-mono font-bold">✓ ATTACHED</span>
+              <span id="recordTimer" class="text-xs font-mono text-white font-bold">00:00</span>
+            </div>
           </div>
           <div class="flex items-center gap-2">
-            <button id="btnRecordVoice" class="bg-white hover:bg-neutral-200 text-black text-xs font-bold py-2 px-3 rounded-md flex items-center gap-1.5 transition">
+            <button id="btnRecordVoice" type="button" class="bg-white hover:bg-neutral-200 text-black text-xs font-bold py-2 px-3 rounded-md flex items-center gap-1.5 transition">
               🎙️ Hold/Tap to Record Voice
+            </button>
+            <button id="btnClearVoice" type="button" class="hidden bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-white/20 text-xs font-bold py-2 px-2.5 rounded-md transition" title="Clear voice memo">
+              🗑️ Clear
             </button>
             <audio id="audioPreview" controls class="h-8 flex-1 hidden rounded"></audio>
           </div>
-          <p id="recordStatus" class="text-[10px] text-neutral-500 mt-1.5">Record a 5-second situational voice clip.</p>
+          <p id="recordStatus" class="text-[10px] text-neutral-500 mt-1.5">Record a 5-second situational voice clip to attach to your SOS beacon.</p>
         </div>
 
         <!-- Short Note Input -->
@@ -398,6 +446,13 @@
           <p class="text-[11px] text-neutral-400 mt-1">
             Your emergency beacon and location were received and dispatched. Help is on the way.
           </p>
+          <!-- Rescuer Voice Note on Sender ACK -->
+          <div id="senderRescuerVoiceBox" class="hidden mt-2.5 p-2.5 bg-black rounded-lg border border-emerald-400/60 flex flex-col gap-1">
+            <span class="text-[10px] text-emerald-300 font-bold font-mono flex items-center gap-1">
+              <span>🎙️</span> RESCUER VOICE INSTRUCTION RECEIVED:
+            </span>
+            <audio id="senderRescuerAudio" controls class="w-full h-7 rounded"></audio>
+          </div>
         </div>
       </div>
 
@@ -456,6 +511,29 @@
           </div>
         </div>
 
+        <!-- Rescuer Tactical Voice Memo to Survivor -->
+        <div class="bg-neutral-900 border border-white/20 p-2.5 rounded-lg flex flex-col gap-1.5">
+          <div class="flex justify-between items-center">
+            <label class="text-[10px] text-neutral-300 font-mono font-bold uppercase flex items-center gap-1">
+              <span>🎙️</span> ATTACH RESCUER VOICE INSTRUCTION TO ACK (OPTIONAL):
+            </label>
+            <div class="flex items-center gap-2">
+              <span id="rescuerVoiceBadge" class="hidden text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-500/50 px-1.5 py-0.5 rounded font-mono font-bold">✓ ATTACHED</span>
+              <span id="rescuerRecordTimer" class="text-xs font-mono text-white font-bold">00:00</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="btnRecordRescuerVoice" type="button" class="bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold py-1.5 px-3 rounded-md flex items-center gap-1.5 border border-white/30 transition">
+              🎙️ Record Instruction (5s)
+            </button>
+            <button id="btnClearRescuerVoice" type="button" class="hidden bg-neutral-800 hover:bg-neutral-700 text-neutral-400 text-xs py-1.5 px-2 rounded-md transition" title="Clear voice">
+              🗑️ Clear
+            </button>
+            <audio id="rescuerAudioPreview" controls class="h-7 flex-1 hidden rounded"></audio>
+          </div>
+          <span class="text-[9px] text-neutral-500 font-mono">Survivor's phone will play this voice instruction when rescue ACK is confirmed.</span>
+        </div>
+
         <button id="btnMainDispatchAck" class="w-full bg-emerald-400 hover:bg-emerald-300 active:scale-95 text-black font-black text-xs md:text-sm py-3 px-4 rounded-lg shadow-xl flex items-center justify-center gap-2 uppercase tracking-wider font-mono transition">
           <span>🛡️</span> SEND RESCUE ACK TO SENDER (AIRWAVES + CLOUD) ➔
         </button>
@@ -486,11 +564,11 @@
 
   </main>
 
-  <script src="crc16.js?v=11"></script>
-  <script src="packetEngine.js?v=11"></script>
-  <script src="paho-mqtt.js?v=11"></script>
-  <script src="meshBridge.js?v=11"></script>
-  <script src="audioModem.js?v=11"></script>
-  <script src="app.js?v=11"></script>
+  <script src="crc16.js?v=12"></script>
+  <script src="packetEngine.js?v=12"></script>
+  <script src="paho-mqtt.js?v=12"></script>
+  <script src="meshBridge.js?v=12"></script>
+  <script src="audioModem.js?v=12"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>
