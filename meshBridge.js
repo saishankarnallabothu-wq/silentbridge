@@ -1,5 +1,6 @@
 // meshBridge.js - Multi-Transport Real-Time Cross-Device Relay for SilentBridge
-// Supports: Cloud WSS MQTT (EMQX + HiveMQ Fallback), Custom WebSocket Relay, and BroadcastChannel
+// Supports: Autonomous Multi-Hop Relay, Cloud WSS MQTT, Offline Local Hotspot / LAN WS, and BroadcastChannel
+// Enables communication across large distances and true off-grid disaster operation
 
 class SilentBridgeMesh {
   constructor(options = {}) {
@@ -10,9 +11,12 @@ class SilentBridgeMesh {
     this.onPacket = options.onPacket || (() => {});
     this.onStatus = options.onStatus || (() => {});
     this.onPeersChange = options.onPeersChange || (() => {});
+    this.onRelayForward = options.onRelayForward || (() => {});
 
     this.cloudConnected = false;
     this.wsConnected = false;
+    this.enableRelay = true; // Autonomous Multi-Hop Relay Node enabled by default
+    this.maxMeshHops = 15;   // Increased range limit up to 15 hops across large distances
 
     // Public Secure WebSocket MQTT Brokers (Works globally across HTTPS/Vercel with zero backend)
     this.activeBrokers = [
@@ -28,6 +32,9 @@ class SilentBridgeMesh {
     this.peers = new Map(); // deviceId -> { role, lastSeen }
     this.heartbeatTimer = null;
     this.seenPacketIds = new Set();
+    this.relayedPackets = new Set();
+    this.offlineQueue = this.loadOfflineQueue();
+
     this.customWsUrl = options.customWsUrl || this.getInitialWsUrl();
 
     this.initBroadcastChannel();
@@ -36,6 +43,35 @@ class SilentBridgeMesh {
       this.initCustomWs();
     }
     this.startHeartbeat();
+  }
+
+  loadOfflineQueue() {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('silentbridge_offline_tx_queue');
+        if (stored) return JSON.parse(stored);
+      }
+    } catch (e) {}
+    return [];
+  }
+
+  saveOfflineQueue() {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('silentbridge_offline_tx_queue', JSON.stringify(this.offlineQueue.slice(-20)));
+      }
+    } catch (e) {}
+  }
+
+  flushOfflineQueue() {
+    if (this.offlineQueue.length === 0) return;
+    console.log(`📦 Flushing ${this.offlineQueue.length} queued offline packets to active mesh transport...`);
+    const queueCopy = [...this.offlineQueue];
+    this.offlineQueue = [];
+    this.saveOfflineQueue();
+    queueCopy.forEach(pkt => {
+      this.sendPacket(pkt, false);
+    });
   }
 
   getInitialRoomCode() {
@@ -61,6 +97,11 @@ class SilentBridgeMesh {
         const relayFromUrl = new URLSearchParams(window.location.search).get('relay');
         if (relayFromUrl) return relayFromUrl;
         if (window.SILENTBRIDGE_WS_URL) return window.SILENTBRIDGE_WS_URL;
+
+        if (typeof localStorage !== 'undefined') {
+          const savedWs = localStorage.getItem('silentbridge_custom_ws');
+          if (savedWs) return savedWs;
+        }
 
         const hostname = (window.location && window.location.hostname) || '';
         const isLocalRelayHost = hostname && (hostname === 'localhost'
@@ -170,7 +211,7 @@ class SilentBridgeMesh {
       return;
     }
 
-    const broker = this.activeBrokers[0]; // Unified primary broker across all devices
+    const broker = this.activeBrokers[0];
     const clientId = `sb_${this.deviceId}_${Math.random().toString(36).substring(2, 6)}`;
 
     try {
@@ -219,11 +260,13 @@ class SilentBridgeMesh {
           console.log(`✅ Cloud Mesh active on ${broker.name} [Room: #${this.roomCode}]`);
           this.notifyStatus('connected', `Mesh Online: Connected to ${broker.name}`);
           this.sendPing();
+          this.flushOfflineQueue();
         },
         onFailure: (err) => {
           this.cloudConnected = false;
           console.warn(`Failed to connect to ${broker.name}:`, err);
-          setTimeout(() => this.initCloudMqtt(), 3000);
+          this.notifyStatus('offline', 'Mesh Offline (Acoustic + Local Mesh Active)');
+          setTimeout(() => this.initCloudMqtt(), 4000);
         }
       });
     } catch (err) {
@@ -232,24 +275,42 @@ class SilentBridgeMesh {
     }
   }
 
+  setCustomWsUrl(url) {
+    if (!url) return;
+    this.customWsUrl = url.trim();
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('silentbridge_custom_ws', this.customWsUrl);
+      }
+    } catch (e) {}
+    this.initCustomWs(this.customWsUrl);
+  }
+
   initCustomWs(customUrl) {
     if (customUrl) this.customWsUrl = customUrl;
     if (!this.customWsUrl) return;
 
+    if (this.wsClient) {
+      try { this.wsClient.close(); } catch (e) {}
+      this.wsClient = null;
+    }
+
     try {
-      console.log("Connecting to custom WebSocket relay:", this.customWsUrl);
+      console.log("Connecting to offline/local WebSocket relay:", this.customWsUrl);
       this.wsClient = new WebSocket(this.customWsUrl);
 
       this.wsClient.onopen = () => {
         this.wsConnected = true;
-        console.log("✅ Custom WebSocket connected:", this.customWsUrl);
+        console.log("✅ Local Offline Hotspot/LAN WebSocket connected:", this.customWsUrl);
+        this.notifyStatus('connected', `Local Mesh Connected: ${this.customWsUrl}`);
         this.sendPing();
+        this.flushOfflineQueue();
       };
 
       this.wsClient.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data) this.handleIncoming(data, 'custom_ws');
+          if (data) this.handleIncoming(data, 'local_ws');
         } catch (e) {
           console.warn("Custom WS message parse error:", e);
         }
@@ -257,7 +318,7 @@ class SilentBridgeMesh {
 
       this.wsClient.onerror = (e) => {
         this.wsConnected = false;
-        console.warn("Custom WS error:", e);
+        console.warn("Local WS notice:", e);
       };
 
       this.wsClient.onclose = () => {
@@ -267,14 +328,14 @@ class SilentBridgeMesh {
         }, 5000);
       };
     } catch (e) {
-      console.warn("Custom WS init error:", e);
+      console.warn("Local WS init error:", e);
     }
   }
 
   startHeartbeat() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
 
-    // Send ping every 8 seconds to prevent mobile carrier NAT socket timeouts
+    // Send ping every 8 seconds to maintain presence
     this.heartbeatTimer = setInterval(() => {
       this.sendPing();
       this.pruneOldPeers();
@@ -300,38 +361,42 @@ class SilentBridgeMesh {
       type: 0xFD,
       isTest: true,
       text: `PING CHECK FROM ${this.role.toUpperCase()}`,
-      timestamp: timeStr
+      timestamp: timeStr,
+      ttl: this.maxMeshHops,
+      hops: 0
     });
     return testId;
   }
 
   sendPacket(packetObj, isInternal = false) {
-    packetObj._senderDevice = this.deviceId;
-    packetObj._senderRole = this.role;
-    packetObj._room = this.roomCode;
+    if (!packetObj) return;
+
+    if (!packetObj._senderDevice) packetObj._senderDevice = this.deviceId;
+    if (!packetObj._senderRole) packetObj._senderRole = this.role;
+    if (!packetObj._room) packetObj._room = this.roomCode;
     packetObj._txTime = Date.now();
+    if (packetObj.ttl === undefined) packetObj.ttl = this.maxMeshHops;
+    if (packetObj.hops === undefined) packetObj.hops = 0;
 
     const payloadString = JSON.stringify(packetObj);
 
-    // 1. Same-device BroadcastChannel
+    // 1. Same-device / tab-to-tab BroadcastChannel
     if (this.broadcastChannel) {
       try {
         this.broadcastChannel.postMessage(packetObj);
       } catch (e) {}
     }
 
-    // 2. Cloud Mesh MQTT (Cross-Device across anywhere in the world)
+    // 2. Cloud Mesh MQTT (Worldwide cross-device relay)
+    let dispatchedOverNetwork = false;
     if (this.mqttClient && this.cloudConnected) {
       try {
-        // Support voice audio memos up to 48KB over WSS MQTT (safe for HiveMQ & EMQX broker WebSocket frames)
         const mqttPacket = { ...packetObj };
         if (mqttPacket.voiceAudio && mqttPacket.voiceAudio.length > 48000) {
-          console.warn("voiceAudio exceeds 48KB MQTT frame safety threshold, flagging hasVoice:", mqttPacket.voiceAudio.length);
           mqttPacket.hasVoice = true;
           mqttPacket.voiceAudio = null;
         }
         if (mqttPacket.ackVoiceAudio && mqttPacket.ackVoiceAudio.length > 48000) {
-          console.warn("ackVoiceAudio exceeds 48KB MQTT frame safety threshold, flagging hasAckVoice:", mqttPacket.ackVoiceAudio.length);
           mqttPacket.hasAckVoice = true;
           mqttPacket.ackVoiceAudio = null;
         }
@@ -339,30 +404,40 @@ class SilentBridgeMesh {
         const mqttPayload = JSON.stringify(mqttPacket);
         const targetRoom = packetObj._room || this.roomCode || 'GLOBAL';
 
-        // Publish to room topic with QoS 1 guaranteed delivery
         const message = new Paho.MQTT.Message(mqttPayload);
         message.destinationName = `silentbridge/v2/${targetRoom}`;
         message.qos = 1;
         this.mqttClient.send(message);
 
-        // Also broadcast to GLOBAL so any rescuer picks it up instantly
         if (targetRoom !== 'GLOBAL' && !isInternal) {
           const globalMsg = new Paho.MQTT.Message(mqttPayload);
           globalMsg.destinationName = 'silentbridge/v2/GLOBAL';
           globalMsg.qos = 1;
           this.mqttClient.send(globalMsg);
         }
+        dispatchedOverNetwork = true;
       } catch (e) {
         console.warn("MQTT send packet error:", e);
       }
     }
 
-    // 3. Custom / Local WebSocket
+    // 3. Custom / Local Offline Hotspot WebSocket Relay
     if (this.wsClient && this.wsClient.readyState === WebSocket.OPEN) {
       try {
         this.wsClient.send(payloadString);
+        dispatchedOverNetwork = true;
       } catch (e) {
         console.warn("Custom WS send error:", e);
+      }
+    }
+
+    // 4. Store in Offline Queue if no active network connection (Data Mule Store-and-Forward)
+    if (!dispatchedOverNetwork && !isInternal && packetObj.type !== 0xFE && !packetObj.isHeartbeat) {
+      const alreadyQueued = this.offlineQueue.some(p => p.msgId === packetObj.msgId && p.type === packetObj.type);
+      if (!alreadyQueued) {
+        this.offlineQueue.push(packetObj);
+        this.saveOfflineQueue();
+        console.log(`💾 Stored distress packet #${packetObj.msgId} in Offline Vault queue for store-and-forward.`);
       }
     }
   }
@@ -374,7 +449,7 @@ class SilentBridgeMesh {
     if (packetObj._senderDevice === this.deviceId) return;
 
     // Filter by room code:
-    // - Receivers (Rescue HQ) accept packets from ALL rooms/areas!
+    // - Receivers (Rescue HQ) accept packets from ALL rooms and areas!
     // - ACKs (0xFF) and Test Pings (0xFD) are accepted across all rooms!
     // - Packets sent to or from 'GLOBAL' are accepted by everyone!
     const isReceiver = this.role === 'receiver';
@@ -391,13 +466,46 @@ class SilentBridgeMesh {
       return;
     }
 
+    // Autonomous Multi-Hop Mesh Relay Forwarder:
+    // Enables messages to reach Rescuer across large distances (neighborhoods, campuses, disaster zones)
+    if (this.enableRelay && packetObj.type !== 0xFE && !packetObj.isHeartbeat) {
+      const remainingTtl = (packetObj.ttl !== undefined) ? Number(packetObj.ttl) : 10;
+      const relayKey = `relay_${packetObj.msgId}_${packetObj.type}`;
+
+      if (remainingTtl > 1 && !this.relayedPackets.has(relayKey)) {
+        this.relayedPackets.add(relayKey);
+        if (this.relayedPackets.size > 200) {
+          const first = this.relayedPackets.values().next().value;
+          this.relayedPackets.delete(first);
+        }
+
+        const forwardPacket = {
+          ...packetObj,
+          ttl: remainingTtl - 1,
+          hops: (packetObj.hops || 0) + 1,
+          relayedBy: this.deviceId,
+          relayPath: [...(packetObj.relayPath || []), this.deviceId.slice(0, 7)],
+          _isRelayHop: true
+        };
+
+        // Randomized jitter delay (200-600ms) to prevent collision storms
+        const jitter = Math.floor(Math.random() * 400 + 200);
+        setTimeout(() => {
+          console.log(`📡 Autonomous Mesh Relay: Forwarding beacon #${packetObj.msgId} (Hop ${forwardPacket.hops}, TTL ${forwardPacket.ttl}) across airwaves and local mesh`);
+          this.sendPacket(forwardPacket, true);
+          if (this.onRelayForward) {
+            this.onRelayForward(forwardPacket);
+          }
+        }, jitter);
+      }
+    }
+
     // Deduplicate incoming SOS / ACK packets, BUT permit voice enrichment
     const packetKey = `${packetObj.msgId || '0'}_${packetObj.type}_${packetObj.isTest ? 'test' : 'sos'}`;
     const hasVoice = Boolean(packetObj.voiceAudio || packetObj.ackVoiceAudio);
     if (!this.seenPacketsWithVoice) this.seenPacketsWithVoice = new Set();
 
     if (this.seenPacketIds.has(packetKey)) {
-      // If previous packet arrived without voice, but this one has voice, forward it to app!
       if (hasVoice && !this.seenPacketsWithVoice.has(packetKey)) {
         this.seenPacketsWithVoice.add(packetKey);
         console.log(`🎙️ MeshBridge: Passing voice-enriched packet #${packetObj.msgId} to application handler.`);
@@ -480,11 +588,17 @@ class SilentBridgeMesh {
       cloudConnected: this.cloudConnected,
       wsConnected: this.wsConnected,
       peerCount: this.peers.size,
-      broker: this.activeBrokers[this.currentBrokerIndex]?.name || 'Unknown'
+      broker: this.activeBrokers[this.currentBrokerIndex]?.name || 'Unknown',
+      customWsUrl: this.customWsUrl,
+      enableRelay: this.enableRelay,
+      maxMeshHops: this.maxMeshHops
     };
   }
 }
 
 if (typeof window !== 'undefined') {
   window.SilentBridgeMesh = SilentBridgeMesh;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = SilentBridgeMesh;
 }
