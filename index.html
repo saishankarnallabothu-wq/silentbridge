@@ -5,83 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SilentBridge - Acoustic Emergency Mesh</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="leaflet.css" />
-  <script src="leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="manifest" href="manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
   <style>
-    * {
-      box-sizing: border-box;
-    }
     body {
       background-color: #000000;
       color: #ffffff;
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-family: 'Inter', sans-serif;
       background-image: 
         linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
         linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
       background-size: 32px 32px;
-      margin: 0;
-      padding: 0;
     }
     .font-mono {
-      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+      font-family: 'JetBrains Mono', monospace;
     }
     .leaflet-tile-pane {
       filter: grayscale(100%) invert(100%) contrast(150%) brightness(80%);
     }
     .leaflet-container {
-      background: #050505 !important;
-      background-image: 
-        radial-gradient(circle at center, rgba(16, 185, 129, 0.08) 0, transparent 70%),
-        linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px) !important;
-      background-size: 100% 100%, 40px 40px, 40px 40px !important;
+      background: #000000 !important;
     }
     .panic-glow {
       box-shadow: 0 0 25px 0px rgba(255, 255, 255, 0.25);
     }
-    /* Essential layout fallbacks if external CDN is offline */
-    .hidden { display: none !important; }
-    .flex { display: flex !important; }
-    .grid { display: grid !important; }
-    .items-center { align-items: center; }
-    .justify-between { justify-content: space-between; }
-    .justify-center { justify-content: center; }
-    .flex-col { flex-direction: column; }
-    .flex-1 { flex: 1 1 0%; }
-    .w-full { width: 100%; }
-    .h-full { height: 100%; }
-    .max-w-7xl { max-width: 80rem; }
-    .max-w-md { max-width: 28rem; }
-    .max-w-sm { max-width: 24rem; }
-    .mx-auto { margin-left: auto; margin-right: auto; }
-    .rounded-xl { border-radius: 0.75rem; }
-    .rounded-lg { border-radius: 0.5rem; }
-    .rounded-md { border-radius: 0.375rem; }
-    .rounded-full { border-radius: 9999px; }
-    .border { border-width: 1px; }
-    .border-2 { border-width: 2px; }
-    .border-white\/20 { border-color: rgba(255, 255, 255, 0.2); }
-    .border-white\/30 { border-color: rgba(255, 255, 255, 0.3); }
-    .border-emerald-400 { border-color: #34d399; }
-    .bg-black { background-color: #000000; }
-    .bg-neutral-900 { background-color: #171717; }
-    .bg-neutral-950 { background-color: #0a0a0a; }
-    .bg-white { background-color: #ffffff; }
-    .bg-emerald-400 { background-color: #34d399; }
-    .text-black { color: #000000; }
-    .text-white { color: #ffffff; }
-    .text-emerald-300 { color: #6ee7b7; }
-    .text-emerald-400 { color: #34d399; }
-    .text-neutral-300 { color: #d4d4d4; }
-    .text-neutral-400 { color: #a3a3a3; }
-    .text-neutral-500 { color: #737373; }
-    .cursor-pointer { cursor: pointer; }
-    .select-all { user-select: all; }
-    .transition { transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1); }
   </style>
 </head>
 <body class="min-h-screen flex flex-col selection:bg-white selection:text-black">
@@ -208,74 +159,6 @@
         </select>
       </div>
 
-      <!-- Acoustic Range & Pre-Amp Sensitivity Booster -->
-      <div class="pt-2 border-t border-white/20">
-        <label class="block text-[10px] text-neutral-400 font-black tracking-wider uppercase mb-1">
-          ACOUSTIC RANGE & HARDWARE PRE-AMP BOOST
-        </label>
-        <select id="selAcousticRange" class="w-full bg-neutral-900 border border-white/30 p-2 rounded text-xs text-white focus:outline-none">
-          <option value="long" selected>⚡ Long Range (5.5x Pre-Amp Boost + Matched Filter, ~25-50m)</option>
-          <option value="extreme">🚀 Extreme Turbo Range (8.5x Pre-Amp + Dual Chirp Redundancy)</option>
-          <option value="standard">🎯 Standard Proximity (2.5x Pre-Amp, ~1-10m)</option>
-        </select>
-        <p class="text-[9px] text-neutral-400 mt-1">Multiplies microphone sensitivity to decode faint signals across rooms and outdoor distances.</p>
-      </div>
-
-      <!-- Autonomous Multi-Hop Mesh Relay -->
-      <div class="pt-2 border-t border-white/20">
-        <div class="flex justify-between items-center mb-1">
-          <label class="text-[10px] text-neutral-400 font-black tracking-wider uppercase">
-            AUTONOMOUS MULTI-HOP MESH RELAY
-          </label>
-          <label class="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" id="chkEnableRelay" checked class="sr-only peer">
-            <div class="w-7 h-4 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500"></div>
-          </label>
-        </div>
-        <p class="text-[9px] text-neutral-400 mb-2">Relays distress signals across intermediate devices to extend coverage across kilometers.</p>
-        
-        <label class="block text-[10px] text-neutral-400 font-black tracking-wider uppercase mb-1">
-          MAX MESH RANGE LIMIT / HOP COUNT
-        </label>
-        <select id="selMeshRangeHops" class="w-full bg-neutral-900 border border-white/30 p-2 rounded text-xs text-white focus:outline-none">
-          <option value="15" selected>🌐 Maximum Disaster Range (15 Hops / Unlimited)</option>
-          <option value="7">📡 Extended Mesh (7 Hops / ~10-15 km)</option>
-          <option value="3">📍 Standard Sector (3 Hops / ~3-5 km)</option>
-          <option value="1">🎯 Direct Proximity Only (1 Hop)</option>
-        </select>
-      </div>
-
-      <!-- Local Offline Hotspot / Wi-Fi Mesh Relay (0 Internet Required) -->
-      <div class="pt-2 border-t border-white/20">
-        <div class="flex items-center gap-1.5 mb-1">
-          <span class="text-sm">📶</span>
-          <label class="text-[10px] text-emerald-400 font-black tracking-wider uppercase">
-            LOCAL OFFLINE HOTSPOT / WI-FI RELAY (0 INTERNET NEEDED)
-          </label>
-        </div>
-        <p class="text-[9px] text-neutral-400 mb-2">Connect to a local phone hotspot or offline router so devices on the same Wi-Fi sync without internet.</p>
-        <div class="flex gap-2 mb-2">
-          <input id="txtLocalWs" type="text" placeholder="e.g. ws://192.168.43.1:3000" class="flex-1 bg-neutral-900 border border-white/30 p-2 rounded text-[11px] text-white font-mono focus:outline-none focus:border-emerald-400">
-          <button id="btnConnectLocalWs" class="bg-emerald-400 hover:bg-emerald-300 text-black font-black px-3 rounded text-[10px] uppercase transition">
-            Connect
-          </button>
-        </div>
-        <div class="grid grid-cols-2 gap-1.5">
-          <button type="button" id="btnPresetHotspotAndroid" class="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-white/20 rounded p-1.5 text-[9px] font-mono text-left transition">
-            📱 Android Hotspot (192.168.43.1)
-          </button>
-          <button type="button" id="btnPresetHotspotIos" class="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-white/20 rounded p-1.5 text-[9px] font-mono text-left transition">
-            🍎 iOS Hotspot (172.20.10.1)
-          </button>
-          <button type="button" id="btnPresetRouter" class="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-white/20 rounded p-1.5 text-[9px] font-mono text-left transition">
-            🏠 LAN Router (192.168.1.1)
-          </button>
-          <button type="button" id="btnPresetLocalhost" class="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-white/20 rounded p-1.5 text-[9px] font-mono text-left transition">
-            💻 Local PC (localhost:3000)
-          </button>
-        </div>
-      </div>
-
     </div>
   </div>
 
@@ -299,11 +182,8 @@
       </button>
     </div>
 
-    <!-- Mesh Sync, Offline, Voice Alerts & Status Badges -->
+    <!-- Mesh Sync, Voice Alerts & Status Badges -->
     <div class="flex items-center gap-2">
-      <span id="offlineStatusBadge" class="hidden text-[10px] px-2 py-1 rounded-md font-mono font-bold bg-amber-950 text-amber-300 border border-amber-500/50 flex items-center gap-1 animate-pulse">
-        <span>⚡</span> OFFLINE: AIRWAVES & LOCAL MESH
-      </span>
       <button id="btnToggleVoiceAlerts" class="flex items-center gap-1.5 bg-neutral-950 hover:bg-neutral-900 border border-white/30 px-2.5 py-1 rounded-md text-xs font-mono transition" title="Toggle Tactical Voice Audio Announcements">
         <span id="voiceAlertDot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
         <span id="voiceAlertText" class="text-emerald-300 font-bold text-[10px]">VOICE: ON</span>
@@ -589,13 +469,10 @@
       <div class="mt-3 p-3 bg-neutral-950 border border-white/20 rounded-lg">
         <div class="flex justify-between items-center mb-1.5">
           <span class="text-[10px] font-black text-neutral-300 font-mono uppercase tracking-wider">OFFLINE ACOUSTIC (NO INTERNET)</span>
-          <div class="flex items-center gap-1.5">
-            <span id="lblSenderRangeMode" class="text-[9px] text-emerald-300 font-mono font-bold bg-emerald-950/80 border border-emerald-500/40 px-1.5 py-0.5 rounded">⚡ 5.5x PRE-AMP BOOST</span>
-            <span class="text-[9px] text-emerald-400 font-mono font-bold bg-emerald-950/80 border border-emerald-500/40 px-1.5 py-0.5 rounded">AIRWAVES PHY</span>
-          </div>
+          <span class="text-[9px] text-emerald-400 font-mono font-bold bg-emerald-950/80 border border-emerald-500/40 px-1.5 py-0.5 rounded">SPEAKER ➔ MIC PHY</span>
         </div>
         <p class="text-[10px] text-neutral-400 mb-2">
-          Transmits over physical sound waves directly to nearby rescuer laptops/phones without Wi-Fi or cellular network. Tuned for extended range and multi-room penetration.
+          Transmits over physical sound waves directly to nearby rescuer laptops/phones without Wi-Fi or cellular network. Keep media volume at 100%.
         </p>
         <div class="grid grid-cols-2 gap-2">
           <button id="btnTestSpeaker" type="button" class="bg-neutral-900 hover:bg-neutral-800 border border-white/30 text-neutral-200 text-[11px] font-bold py-2 px-2 rounded-md flex items-center justify-center gap-1.5 transition">
@@ -624,7 +501,7 @@
           <span class="text-[9px] bg-emerald-400 text-black font-black px-2 py-0.5 rounded font-mono uppercase tracking-wide">HQ TRANSMITTER ACTIVE</span>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-[10px] text-neutral-400 font-mono font-bold uppercase mb-1">TARGET BEACON / SENDER ID:</label>
             <input id="txtTargetBeaconId" type="text" value="ALL" placeholder="e.g. 4521 or ALL" class="w-full bg-neutral-900 border border-emerald-400/60 p-2 rounded text-emerald-300 font-mono font-black text-xs uppercase focus:outline-none focus:border-emerald-400" />
@@ -635,17 +512,7 @@
             <div id="latestBeaconSummary" class="bg-neutral-900 border border-white/20 p-2 rounded text-[11px] text-emerald-300 font-mono font-bold truncate">
               STANDBY: Ready to acknowledge survivor distress beacons
             </div>
-            <span class="text-[9px] text-neutral-500 font-mono mt-0.5 block">Transmits over 1200-2200Hz voiceband & mesh</span>
-          </div>
-          <div>
-            <label class="block text-[10px] text-neutral-400 font-mono font-bold uppercase mb-1">RESCUER RECEPTION RANGE LIMIT:</label>
-            <select id="selRescuerRange" class="w-full bg-neutral-900 border border-emerald-400/60 p-2 rounded text-emerald-300 font-mono font-bold text-xs uppercase focus:outline-none">
-              <option value="unlimited" selected>🌐 ALL DISTANCES (UNLIMITED RANGE)</option>
-              <option value="100">📡 100 KM (Regional Disaster Zone)</option>
-              <option value="25">📍 25 KM (District Sector)</option>
-              <option value="5">🎯 5 KM (Local Sector)</option>
-            </select>
-            <span class="text-[9px] text-neutral-500 font-mono mt-0.5 block">Default: Unlimited distance reception</span>
+            <span class="text-[9px] text-neutral-500 font-mono mt-0.5 block">Transmits over 1200-2200Hz voiceband & MQTT relay</span>
           </div>
         </div>
 
@@ -702,22 +569,11 @@
 
   </main>
 
-  <!-- Floating Autonomous Mesh Relay Notification Toast -->
-  <div id="relayToast" class="fixed bottom-4 right-4 z-50 bg-neutral-950 border-2 border-emerald-400 rounded-xl p-3 shadow-2xl flex items-center gap-3 transition-all duration-300 transform translate-y-24 opacity-0 pointer-events-none">
-    <div class="w-7 h-7 rounded-lg bg-emerald-400 text-black font-black flex items-center justify-center text-xs flex-shrink-0">
-      📡
-    </div>
-    <div class="font-mono text-xs">
-      <div id="relayToastTitle" class="font-black text-emerald-300 uppercase">MESH RELAY PACKET FORWARDED</div>
-      <div id="relayToastDesc" class="text-[10px] text-neutral-400">Retransmitted distress signal over airwaves & mesh (+1 Hop)</div>
-    </div>
-  </div>
-
-  <script src="crc16.js?v=14"></script>
-  <script src="packetEngine.js?v=14"></script>
-  <script src="paho-mqtt.js?v=14"></script>
-  <script src="meshBridge.js?v=14"></script>
-  <script src="audioModem.js?v=14"></script>
-  <script src="app.js?v=14"></script>
+  <script src="crc16.js?v=13"></script>
+  <script src="packetEngine.js?v=13"></script>
+  <script src="paho-mqtt.js?v=13"></script>
+  <script src="meshBridge.js?v=13"></script>
+  <script src="audioModem.js?v=13"></script>
+  <script src="app.js?v=13"></script>
 </body>
 </html>

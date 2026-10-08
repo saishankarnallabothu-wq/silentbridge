@@ -1,6 +1,5 @@
 // audioModem.js - Ultra-Reliable 4-FSK Acoustic Modem with Adaptive Microphone Demodulation
 // Enables true off-grid device-to-device communication over speaker and microphone without internet
-// Enhanced with Hardware DSP Pre-Amp, Bandpass Filtering, Dynamic Range Compression & Multi-Burst Long Range Modes
 
 class AudioModem {
   constructor(onPacketReceived, onStatusChange) {
@@ -8,20 +7,13 @@ class AudioModem {
     this.micStream = null;
     this.analyser = null;
     this.micSource = null;
-    this.bandFilter = null;
-    this.preAmp = null;
-    this.compressor = null;
-
     this.isListening = false;
     this.isTransmitting = false;
     this.onPacketReceived = onPacketReceived || (() => {});
     this.onStatusChange = onStatusChange || (() => {});
 
-    // Sound mode: 'audible' (1200Hz-2200Hz, recommended for all devices), 'ultrasound', or 'silent'
+    // Sound mode: 'audible' (1300Hz-2700Hz, recommended for all devices), 'ultrasound', or 'silent'
     this.soundMode = 'audible';
-    // Range Sensitivity Mode: 'standard' (close proximity), 'long' (extended ~25-50m), 'extreme' (turbo high-gain)
-    this.rangeMode = 'long';
-
     this.visualizerCanvas = null;
     this.visualizerCtx = null;
     this.animFrameId = null;
@@ -40,17 +32,6 @@ class AudioModem {
     if (['audible', 'ultrasound', 'silent'].includes(mode)) {
       this.soundMode = mode;
       console.log("AudioModem sound mode set to:", mode);
-    }
-  }
-
-  setRangeMode(mode) {
-    if (['standard', 'long', 'extreme'].includes(mode)) {
-      this.rangeMode = mode;
-      const gainMap = { standard: 2.5, long: 5.5, extreme: 8.5 };
-      if (this.preAmp && this.audioCtx) {
-        this.preAmp.gain.setValueAtTime(gainMap[mode], this.audioCtx.currentTime);
-      }
-      console.log(`📡 AudioModem range sensitivity set to: ${mode.toUpperCase()} (${gainMap[mode]}x Pre-Amp Boost)`);
     }
   }
 
@@ -111,7 +92,7 @@ class AudioModem {
         this.analyser.getByteFrequencyData(dataArray);
 
         for (let i = 20; i < 200; i++) {
-          if (dataArray[i] > 12) {
+          if (dataArray[i] > 15) {
             hasLiveAudio = true;
             break;
           }
@@ -159,11 +140,11 @@ class AudioModem {
         ctx.fillStyle = this.isListening ? '#10b981' : '#737373';
         ctx.font = '9px monospace';
         let label = 'ACOUSTIC STANDBY';
-        if (this.isTransmitting) label = 'TX TRANSMITTING ACOUSTIC BURST';
+        if (this.isTransmitting) label = 'TX TRANSMITTING ACOUSTIC FSK';
         else if (this.currentRxState === 'RECEIVING') label = 'RX ACOUSTIC INCOMING BURST...';
-        else if (this.isListening) label = `RX AIRWAVES LISTENING [${this.rangeMode.toUpperCase()} RANGE]`;
+        else if (this.isListening) label = 'RX AIRWAVES LISTENING (MIC ACTIVE)';
 
-        ctx.fillText(label, width - 260, 18);
+        ctx.fillText(label, width - 230, 18);
       }
     };
 
@@ -191,36 +172,12 @@ class AudioModem {
 
         if (this.audioCtx && this.analyser) {
           this.micSource = this.audioCtx.createMediaStreamSource(this.micStream);
-
-          // 1. High-Q Bandpass Filter to isolate the 900Hz - 2400Hz acoustic signaling spectrum
-          this.bandFilter = this.audioCtx.createBiquadFilter();
-          this.bandFilter.type = 'bandpass';
-          this.bandFilter.frequency.value = 1600;
-          this.bandFilter.Q.value = 0.85;
-
-          // 2. Tactical Pre-Amplifier Gain Boost for High Distance Sensitivity
-          this.preAmp = this.audioCtx.createGain();
-          const gainMap = { standard: 2.5, long: 5.5, extreme: 8.5 };
-          this.preAmp.gain.value = gainMap[this.rangeMode] || 5.5;
-
-          // 3. Audio Dynamics Compressor (Lifts quiet distant signals, prevents loud near-field clipping)
-          this.compressor = this.audioCtx.createDynamicsCompressor();
-          this.compressor.threshold.setValueAtTime(-50, this.audioCtx.currentTime);
-          this.compressor.knee.setValueAtTime(35, this.audioCtx.currentTime);
-          this.compressor.ratio.setValueAtTime(10, this.audioCtx.currentTime);
-          this.compressor.attack.setValueAtTime(0.003, this.audioCtx.currentTime);
-          this.compressor.release.setValueAtTime(0.2, this.audioCtx.currentTime);
-
-          // Connect Chain: micSource -> bandFilter -> preAmp -> compressor -> analyser
-          this.micSource.connect(this.bandFilter);
-          this.bandFilter.connect(this.preAmp);
-          this.preAmp.connect(this.compressor);
-          this.compressor.connect(this.analyser);
+          this.micSource.connect(this.analyser);
         }
 
         this.isListening = true;
         this.onStatusChange("LISTENING (MIC ACTIVE)");
-        console.log(`🎤 Acoustic microphone monitoring & 4-FSK demodulator started [Range: ${this.rangeMode.toUpperCase()}].`);
+        console.log("🎤 Acoustic microphone monitoring & 4-FSK demodulator started.");
         this.startDemodulator();
       }
     } catch (err) {
@@ -230,7 +187,7 @@ class AudioModem {
     }
   }
 
-  // 4-FSK Acoustic Transmitter with Maximum Sound Output and Distance Redundancy
+  // 4-FSK Acoustic Transmitter (Phone / Laptop Speaker)
   async transmitPacket(uint8Array) {
     if (!uint8Array || uint8Array.length === 0) return;
 
@@ -238,20 +195,6 @@ class AudioModem {
     this.isTransmitting = true;
     this.onStatusChange("TRANSMITTING SOUND...");
 
-    // In Long Range / Extreme mode, transmit dual redundant bursts with a brief gap to punch through distance fading and echoes
-    const repeatCount = (this.rangeMode === 'extreme') ? 2 : (this.rangeMode === 'long') ? 2 : 1;
-    for (let r = 0; r < repeatCount; r++) {
-      await this.transmitSingleBurst(uint8Array);
-      if (r < repeatCount - 1) {
-        await new Promise(res => setTimeout(res, 260));
-      }
-    }
-
-    this.isTransmitting = false;
-    this.onStatusChange(this.isListening ? "LISTENING" : "READY");
-  }
-
-  async transmitSingleBurst(uint8Array) {
     // Convert raw bytes into 2-bit symbols (4 symbols per byte)
     const symbols = [];
     for (let i = 0; i < uint8Array.length; i++) {
@@ -283,18 +226,18 @@ class AudioModem {
 
         let t = now;
         gain.gain.setValueAtTime(0.001, t);
-        // Maximum clean volume (1.0) ensures acoustic penetration across rooms and outdoor distances
-        gain.gain.linearRampToValueAtTime(1.0, t + 0.02);
+        // High volume (0.85) ensures phone speakers reach across room to laptop mic
+        gain.gain.linearRampToValueAtTime(0.85, t + 0.02);
 
         // 1. Pilot Wakeup Tone (950 Hz)
         osc.frequency.setValueAtTime(this.PILOT_FREQ, t);
         t += pilotDur;
 
-        // 2. Sync Start Tone (2200 Hz clean marker)
+        // 2. Sync Start Tone (2700 Hz - clean marker)
         osc.frequency.setValueAtTime(this.SYNC_FREQ, t);
         t += syncDur;
 
-        // 3. 4-FSK Data Symbols (1200, 1450, 1700, 1950 Hz)
+        // 3. 4-FSK Data Symbols (1300, 1650, 2000, 2350 Hz)
         for (let i = 0; i < symbols.length; i++) {
           const freq = this.DATA_FREQS[symbols[i]];
           osc.frequency.setValueAtTime(freq, t);
@@ -305,20 +248,23 @@ class AudioModem {
         osc.frequency.setValueAtTime(this.END_FREQ, t);
         t += endDur;
 
-        gain.gain.setValueAtTime(1.0, t);
+        gain.gain.setValueAtTime(0.85, t);
         gain.gain.linearRampToValueAtTime(0.001, t + 0.03);
 
         osc.start(now);
         osc.stop(t + 0.05);
 
-        const totalMs = Math.round((t - now + 0.08) * 1000);
+        const totalMs = Math.round((t - now + 0.1) * 1000);
         await new Promise(res => setTimeout(res, totalMs));
       } catch (err) {
         console.warn("Acoustic playback note:", err);
       }
     } else {
-      await new Promise(res => setTimeout(res, 350));
+      await new Promise(res => setTimeout(res, 400));
     }
+
+    this.isTransmitting = false;
+    this.onStatusChange(this.isListening ? "LISTENING" : "READY");
   }
 
   // Real-Time 4-FSK Acoustic Demodulator with Integrating Energy Matched Filter
@@ -365,14 +311,10 @@ class AudioModem {
       const now = performance.now();
       const syncEnergy = getEnergy(this.SYNC_FREQ);
 
-      // Range-mode adaptive sensitivity thresholds:
-      const minThreshold = (this.rangeMode === 'extreme') ? 4.5 : (this.rangeMode === 'long') ? 6.5 : 14.0;
-      const snrMargin = (this.rangeMode === 'extreme') ? 2.2 : (this.rangeMode === 'long') ? 3.2 : 6.0;
-
       if (rxState === 'IDLE') {
         this.currentRxState = 'LISTENING';
-        // Multi-tick confirmation locks onto 150ms 2200Hz sync tone while rejecting short noise spikes
-        if (syncEnergy > Math.max(minThreshold, noiseFloor + snrMargin)) {
+        // 2-tick confirmation guarantees lock onto true 150ms 2200Hz sync tone, rejecting noise spikes
+        if (syncEnergy > Math.max(16, noiseFloor + 7)) {
           syncCounter++;
           if (syncCounter >= 2) {
             rxState = 'WAIT_SYNC_END';
@@ -387,8 +329,7 @@ class AudioModem {
         const elapsedSinceSync = now - syncDetectTime;
         // The sync tone is 150ms long. Must wait at least 90ms after 2-tick lock before checking falloff!
         const canEnd = elapsedSinceSync >= 90;
-        const minCutoff = (this.rangeMode === 'extreme') ? 3.5 : (this.rangeMode === 'long') ? 5.5 : 12.0;
-        const syncEnded = canEnd && ((syncEnergy < Math.max(minCutoff, peakSyncEnergy * 0.48)) || (elapsedSinceSync > 140));
+        const syncEnded = canEnd && ((syncEnergy < Math.max(14, peakSyncEnergy * 0.48)) || (elapsedSinceSync > 140));
 
         if (syncEnded) {
           rxState = 'DATA';
@@ -398,7 +339,7 @@ class AudioModem {
           symbolStartTime = now;
           energyAccumulators = [0, 0, 0, 0];
           peakSyncEnergy = 0;
-          console.log(`🔊 Acoustic sync locked! Receiving data symbols with energy integration [${this.rangeMode.toUpperCase()} range]...`);
+          console.log("🔊 Acoustic sync locked! Receiving data symbols with energy integration...");
           this.onStatusChange("RX ACOUSTIC INCOMING...");
         } else if (elapsedSinceSync > 350) {
           rxState = 'IDLE';
@@ -465,7 +406,7 @@ class AudioModem {
       return;
     }
 
-    // Try decoding both exact length and sliding window offsets (offset 0, 1, 2)
+    // Try decoding both exact length and sliding window offsets (offset 0 and offset 1)
     let decoded = null;
     const maxOffset = Math.min(2, Math.max(0, symbols.length - 24));
 

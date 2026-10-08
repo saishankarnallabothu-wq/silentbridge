@@ -85,7 +85,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Multi-Transport Real-Time Mesh Bridge (Autonomous Relay, Local Hotspot, Cloud WSS MQTT, BroadcastChannel)
+  // Multi-Transport Real-Time Mesh Bridge (Cloud WSS MQTT, Local WS, BroadcastChannel)
   let meshBridge = new SilentBridgeMesh({
     role: currentRole,
     onPacket: (packet, transport) => {
@@ -96,48 +96,8 @@ document.addEventListener("DOMContentLoaded", () => {
     },
     onPeersChange: (data) => {
       updatePeersUi(data);
-    },
-    onRelayForward: (relayedPacket) => {
-      showRelayToast(relayedPacket);
     }
   });
-
-  function showRelayToast(packet) {
-    const toast = document.getElementById("relayToast");
-    const title = document.getElementById("relayToastTitle");
-    const desc = document.getElementById("relayToastDesc");
-    if (toast && title && desc) {
-      title.innerText = `📡 MESH RELAY: BEACON #${packet.msgId} FORWARDED`;
-      desc.innerText = `Retransmitted over airwaves & mesh (Hop #${packet.hops || 1}, TTL ${packet.ttl})`;
-      toast.classList.remove("translate-y-24", "opacity-0", "pointer-events-none");
-      setTimeout(() => {
-        toast.classList.add("translate-y-24", "opacity-0", "pointer-events-none");
-      }, 3500);
-    }
-  }
-
-  // Geodesic Distance (Haversine) & Compass Bearing Calculation across large distances
-  function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371000; // Earth radius in meters
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  }
-
-  function calculateCompassBearing(lat1, lon1, lat2, lon2) {
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
-    const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
-              Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
-    const brng = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-    const cardinals = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
-    const idx = Math.round(brng / 22.5) % 16;
-    return { degrees: Math.round(brng), cardinal: cardinals[idx] };
-  }
 
   function broadcastMeshPacket(packetObj) {
     if (meshBridge) {
@@ -1199,7 +1159,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const voicePayload = attachedVoice || senderVoiceBase64 || null;
 
     // Packet ALWAYS preserves survivor's recorded voice note if available!
-    const maxHops = (meshBridge && meshBridge.maxMeshHops) ? meshBridge.maxMeshHops : 15;
     const packetObj = {
       msgId: generatedId,
       name: survivorName,
@@ -1207,21 +1166,14 @@ document.addEventListener("DOMContentLoaded", () => {
       lat: Number(loc.lat),
       lon: Number(loc.lon),
       accuracy: Number(loc.accuracy),
-      ttl: maxHops,
-      hops: 0,
-      relayChain: [],
+      ttl: 3,
       text: text,
       voiceAudio: voicePayload,
       timestamp: sentTime,
       isPanic: isPanic
     };
 
-    console.log(`📢 Prepared SOS packet #${generatedId}. Voice attached: ${Boolean(voicePayload)} (${voicePayload ? voicePayload.length : 0} chars), TTL: ${maxHops} Hops`);
-
-    // Store in offline disaster vault (persists if phone is completely offline)
-    try {
-      localStorage.setItem('silentbridge_last_offline_sos', JSON.stringify(packetObj));
-    } catch (e) {}
+    console.log(`📢 Prepared SOS packet #${generatedId}. Voice attached: ${Boolean(voicePayload)} (${voicePayload ? voicePayload.length : 0} chars)`);
 
     const acousticBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
       ? PacketEngine.encodeAcoustic(packetObj)
@@ -1606,36 +1558,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const validLon = Number(packet.lon) || 78.4867;
     const validAcc = Number(packet.accuracy) || 15;
 
-    // Calculate Geodesic Distance and Compass Bearing across large distances
-    let distStr = "Direct Signal";
-    let bearingStr = "";
-    let distanceInMeters = null;
-
-    if (currentLat && currentLon && validLat && validLon) {
-      distanceInMeters = calculateHaversineDistance(currentLat, currentLon, validLat, validLon);
-      const bearingObj = calculateCompassBearing(currentLat, currentLon, validLat, validLon);
-      bearingStr = `${bearingObj.cardinal} (${bearingObj.degrees}°)`;
-      if (distanceInMeters < 1000) {
-        distStr = `${Math.round(distanceInMeters)} meters`;
-      } else {
-        distStr = `${(distanceInMeters / 1000).toFixed(2)} km`;
-      }
-    }
-
-    // Check Rescuer Reception Range Limit Filter (defaults to unlimited)
-    const selRescuerRangeEl = document.getElementById("selRescuerRange");
-    const selectedRescuerRange = selRescuerRangeEl ? selRescuerRangeEl.value : 'unlimited';
-    if (selectedRescuerRange !== 'unlimited' && distanceInMeters !== null) {
-      const maxAllowed = parseInt(selectedRescuerRange, 10) * 1000;
-      if (distanceInMeters > maxAllowed) {
-        console.log(`Incident #${packet.msgId} exceeds currently selected range limit (${selectedRescuerRange} km). Distance: ${distStr}`);
-        return;
-      }
-    }
-
     // Tactical Voice Announcement on HQ
-    const distSpoken = (distanceInMeters !== null) ? ` Distance: ${distStr}.` : '';
-    TacticalSpeech.speak(`Emergency alert. Distress beacon received from ${survivorName}. Incident type: ${typeName}.${distSpoken} Coordinates plotted.`);
+    TacticalSpeech.speak(`Emergency alert. Distress beacon received from ${survivorName}. Incident type: ${typeName}. Coordinates plotted.`);
 
     // Update Target Beacon ID Input in Console
     const txtBeaconId = document.getElementById("txtTargetBeaconId");
@@ -1645,12 +1569,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const emptyFeed = document.getElementById("feedEmptyState");
     if (emptyFeed) emptyFeed.classList.add("hidden");
 
-    // Update Top Alert Banner with Distance and Multi-Hop Route
-    const hopInfo = packet.hops ? ` • 📡 Relayed (${packet.hops} Hops)` : '';
-    const distInfo = (distanceInMeters !== null) ? ` • 📍 ${distStr} ${bearingStr ? '(' + bearingStr + ')' : ''}` : '';
+    // Update Top Alert Banner
     document.getElementById("sosTime").innerText = currentTime;
     document.getElementById("sosTitle").innerText = `🚨 ${typeName.toUpperCase()} FROM ${survivorName.toUpperCase()} (#${packet.msgId})!`;
-    document.getElementById("sosSubtitle").innerText = `GPS: ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)${distInfo}${hopInfo}`;
+    document.getElementById("sosSubtitle").innerText = `GPS: ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)`;
     sosBanner.classList.remove("hidden");
 
     // Update Top Banner Voice Memo
@@ -1688,13 +1610,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const beaconSummaryEl = document.getElementById("latestBeaconSummary");
     if (beaconSummaryEl) {
-      beaconSummaryEl.innerText = `ACTIVE BEACON #${packet.msgId} (${survivorName}) - Lat: ${validLat.toFixed(5)}, Lon: ${validLon.toFixed(5)} [${distStr}]`;
+      beaconSummaryEl.innerText = `ACTIVE BEACON #${packet.msgId} (${survivorName}) - Lat: ${validLat.toFixed(5)}, Lon: ${validLon.toFixed(5)}`;
       beaconSummaryEl.className = "bg-neutral-900 border border-emerald-400/50 p-2 rounded text-[11px] text-emerald-300 font-mono font-bold truncate animate-pulse";
     }
 
     const logEl = document.getElementById("ackDispatchLog");
     if (logEl) {
-      logEl.innerText = `ALERT: Distress beacon #${packet.msgId} detected (${distStr}). Ready to transmit Rescue ACK across mesh.`;
+      logEl.innerText = `ALERT: Distress beacon #${packet.msgId} detected. Ready to transmit Rescue ACK.`;
       logEl.className = "text-[10px] text-amber-300 font-mono bg-neutral-900/80 p-2 rounded border border-amber-400/30";
     }
 
@@ -1702,7 +1624,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const googleMapsNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${validLat},${validLon}`;
 
-    // Add High-Precision Map Marker & Tactical Trajectory Vector across ANY Distance
+    // Add High-Precision Map Marker (safely checks if Leaflet is available offline)
     if (typeof L !== 'undefined' && map && markersLayer) {
       try {
         const marker = L.marker([validLat, validLon]).addTo(markersLayer);
@@ -1713,37 +1635,12 @@ document.addEventListener("DOMContentLoaded", () => {
           radius: validAcc
         }).addTo(markersLayer);
 
-        // Plot or update Rescuer Base Station marker
-        if (currentLat && currentLon) {
-          if (!window.rescuerHqMarker) {
-            window.rescuerHqMarker = L.circleMarker([currentLat, currentLon], {
-              radius: 9,
-              color: '#38bdf8',
-              fillColor: '#0284c7',
-              fillOpacity: 0.9,
-              weight: 3
-            }).addTo(markersLayer).bindPopup("<b style='color:black;'>🛡️ RESCUE HQ (YOUR CURRENT POSITION)</b>");
-          } else {
-            window.rescuerHqMarker.setLatLng([currentLat, currentLon]);
-          }
-
-          // Tactical trajectory vector connecting Rescuer and Survivor
-          L.polyline([[currentLat, currentLon], [validLat, validLon]], {
-            color: '#38bdf8',
-            weight: 2.5,
-            opacity: 0.85,
-            dashArray: '8, 8'
-          }).addTo(markersLayer).bindTooltip(`Tactical Vector: ${distStr} ${bearingStr}`, { permanent: false });
-        }
-
         marker.bindPopup(`
           <div class="font-mono text-xs text-black">
             <b>${packet.isPanic ? '🚨 CRITICAL PANIC' : 'SOS Beacon'} #${packet.msgId}</b><br>
             <span><b>Survivor:</b> ${survivorName}</span><br>
             <span><b>Time:</b> ${currentTime}</span><br>
             <span><b>GPS:</b> ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)</span><br>
-            <span><b>Distance to HQ:</b> ${distStr} ${bearingStr ? '(' + bearingStr + ')' : ''}</span><br>
-            ${packet.hops ? `<span><b>Mesh Route:</b> Relayed via ${packet.hops} Hops</span><br>` : ''}
             ${packet.voiceAudio ? '<span style="color:#059669; font-weight:bold;">🎙️ Situational Voice Memo Attached</span><br>' : ''}
             <a href="${googleMapsNavUrl}" target="_blank" style="color: #0066cc; text-decoration: underline; font-weight: bold; margin-top: 4px; display: inline-block;">🗺️ Open Turn-by-Turn Route</a>
             <button id="btnMapPopupAck_${packet.msgId}" style="margin-top: 8px; width: 100%; background: #10b981; color: black; font-weight: 900; padding: 6px 10px; border-radius: 6px; border: none; cursor: pointer; text-transform: uppercase;">
@@ -1759,25 +1656,17 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         });
 
-        // Fit map bounds across all coordinates so both Rescuer and Survivor are in view across any distance
-        const allPoints = [[validLat, validLon]];
-        if (currentLat && currentLon) allPoints.push([currentLat, currentLon]);
-        map.fitBounds(L.latLngBounds(allPoints).pad(0.25));
+        // Pan & Zoom directly onto survivor coordinates or fit all active markers across different areas
+        if (markersLayer.getLayers().length > 2) {
+          const group = L.featureGroup(markersLayer.getLayers());
+          map.fitBounds(group.getBounds().pad(0.2));
+        } else {
+          map.setView([validLat, validLon], 16);
+        }
       } catch (mapErr) {
         console.warn("Leaflet marker placement note:", mapErr);
       }
     }
-
-    // Persist incident in Offline Disaster Vault
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const saved = JSON.parse(localStorage.getItem('silentbridge_saved_incidents') || '[]');
-        if (!saved.some(i => i.msgId === packet.msgId)) {
-          saved.unshift(packet);
-          localStorage.setItem('silentbridge_saved_incidents', JSON.stringify(saved.slice(0, 30)));
-        }
-      }
-    } catch (e) {}
 
     // Add Card to Live Incident Feed
     const feed = document.getElementById("feed");
@@ -1820,13 +1709,8 @@ document.addEventListener("DOMContentLoaded", () => {
       </div>
       <div class="text-xs font-bold text-white">👤 Survivor: ${survivorName}</div>
       <p class="text-neutral-200 font-medium">${packet.text || "Emergency SOS"}</p>
-      <div class="flex flex-wrap justify-between text-neutral-400 font-mono text-[11px] gap-1">
+      <div class="flex justify-between text-neutral-400 font-mono text-[11px]">
         <span>GPS: ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)</span>
-        <span class="text-emerald-300 font-bold">📍 ${distStr} ${bearingStr ? '(' + bearingStr + ')' : ''}</span>
-      </div>
-      <div class="flex justify-between items-center text-[10px] text-neutral-400 font-mono">
-        <span>Route: ${packet.hops ? '📡 Multi-Hop Relayed (' + packet.hops + ' Hops)' : 'Direct Signal'}</span>
-        ${packet.relayedBy ? `<span class="text-neutral-500">Via: ${packet.relayedBy}</span>` : ''}
       </div>
       ${voicePlayerHtml}
       <div class="flex gap-2 mt-1">
@@ -2006,112 +1890,11 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Wire Acoustic Range & Hardware Pre-Amp Boost Selector
-  const selAcousticRange = document.getElementById("selAcousticRange");
-  if (selAcousticRange) {
-    selAcousticRange.value = modem.rangeMode || 'long';
-    selAcousticRange.addEventListener("change", (e) => {
-      const mode = e.target.value;
-      modem.setRangeMode(mode);
-      const lblSenderRange = document.getElementById("lblSenderRangeMode");
-      if (lblSenderRange) {
-        const textMap = {
-          standard: "🎯 2.5x PROXIMITY",
-          long: "⚡ 5.5x PRE-AMP BOOST",
-          extreme: "🚀 8.5x TURBO DUAL-BURST"
-        };
-        lblSenderRange.innerText = textMap[mode] || "⚡ BOOSTED RANGE";
-      }
-    });
-  }
-
-  // Wire Autonomous Multi-Hop Mesh Relay Controls
-  const chkEnableRelay = document.getElementById("chkEnableRelay");
-  if (chkEnableRelay) {
-    chkEnableRelay.checked = meshBridge.enableRelay;
-    chkEnableRelay.addEventListener("change", (e) => {
-      meshBridge.enableRelay = e.target.checked;
-      console.log("Autonomous Mesh Relay set to:", meshBridge.enableRelay);
-    });
-  }
-
-  const selMeshRangeHops = document.getElementById("selMeshRangeHops");
-  if (selMeshRangeHops) {
-    selMeshRangeHops.value = String(meshBridge.maxMeshHops || 15);
-    selMeshRangeHops.addEventListener("change", (e) => {
-      meshBridge.maxMeshHops = parseInt(e.target.value, 10) || 15;
-      console.log("Max Mesh Range Hops set to:", meshBridge.maxMeshHops);
-    });
-  }
-
-  // Wire Local Offline Hotspot / Wi-Fi Mesh Relay
-  const txtLocalWs = document.getElementById("txtLocalWs");
-  const btnConnectLocalWs = document.getElementById("btnConnectLocalWs");
-  if (txtLocalWs && meshBridge.customWsUrl) {
-    txtLocalWs.value = meshBridge.customWsUrl;
-  }
-  if (btnConnectLocalWs && txtLocalWs) {
-    btnConnectLocalWs.addEventListener("click", () => {
-      const url = txtLocalWs.value.trim();
-      if (url) {
-        meshBridge.setCustomWsUrl(url);
-        btnConnectLocalWs.innerText = "✓ Connected!";
-        setTimeout(() => { btnConnectLocalWs.innerText = "Connect"; }, 2000);
-      }
-    });
-  }
-
-  const wireHotspotPreset = (btnId, url) => {
-    const btn = document.getElementById(btnId);
-    if (btn && txtLocalWs) {
-      btn.addEventListener("click", () => {
-        txtLocalWs.value = url;
-        meshBridge.setCustomWsUrl(url);
-        btn.classList.add("ring-1", "ring-emerald-400");
-        setTimeout(() => btn.classList.remove("ring-1", "ring-emerald-400"), 1500);
-      });
-    }
-  };
-  wireHotspotPreset("btnPresetHotspotAndroid", "ws://192.168.43.1:3000");
-  wireHotspotPreset("btnPresetHotspotIos", "ws://172.20.10.1:3000");
-  wireHotspotPreset("btnPresetRouter", "ws://192.168.1.1:3000");
-  wireHotspotPreset("btnPresetLocalhost", "ws://localhost:3000");
-
   if (btnDismissTestPing) {
     btnDismissTestPing.addEventListener("click", () => {
       document.getElementById("testPingBanner").classList.add("hidden");
     });
   }
-
-  // Real-Time Online / Offline Detection
-  function updateOnlineOfflineIndicator() {
-    const isOnline = navigator.onLine;
-    const offlineBadge = document.getElementById("offlineStatusBadge");
-    if (offlineBadge) {
-      if (!isOnline) {
-        offlineBadge.classList.remove("hidden");
-        offlineBadge.innerHTML = "<span>⚡</span> OFFLINE: AIRWAVES & LOCAL MESH ACTIVE";
-      } else {
-        offlineBadge.classList.add("hidden");
-      }
-    }
-  }
-  window.addEventListener('online', updateOnlineOfflineIndicator);
-  window.addEventListener('offline', updateOnlineOfflineIndicator);
-  updateOnlineOfflineIndicator();
-
-  // Restore Cached Incidents from Offline Disaster Vault
-  try {
-    if (typeof localStorage !== 'undefined') {
-      const savedIncidents = JSON.parse(localStorage.getItem('silentbridge_saved_incidents') || '[]');
-      if (savedIncidents.length > 0 && currentRole === 'receiver') {
-        console.log(`📦 Restoring ${savedIncidents.length} cached incidents from Offline Disaster Vault...`);
-        savedIncidents.forEach(inc => {
-          handleReceivedPacket(inc, 'offline_vault');
-        });
-      }
-    }
-  } catch (e) {}
 
   // Initialize microphone UI state on load
   updateMicStatusUi();

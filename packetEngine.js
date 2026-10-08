@@ -1,7 +1,6 @@
-// packetEngine.js - Full 64-Bit Float64 Serialization, Multi-Hop Relay & Compact Acoustic PHY Codec
+// packetEngine.js - Full 64-Bit Float64 Serialization & Compact Acoustic PHY Codec
 const PacketEngine = {
   PACKET_SIZE: 40,
-  DEFAULT_TTL: 10,
 
   encode(packet) {
     const buffer = new ArrayBuffer(this.PACKET_SIZE);
@@ -14,8 +13,8 @@ const PacketEngine = {
     view.setUint16(1, (packet.msgId || 1000) & 0xFFFF, false);
     // Byte 3: Type
     view.setUint8(3, (packet.type || 1) & 0xFF);
-    // Byte 4: TTL (Multi-hop range limit, default 10 hops)
-    view.setUint8(4, (packet.ttl !== undefined ? packet.ttl : this.DEFAULT_TTL) & 0xFF);
+    // Byte 4: TTL
+    view.setUint8(4, (packet.ttl || 3) & 0xFF);
 
     // Bytes 5-12: EXACT 64-bit Double Precision Latitude
     view.setFloat64(5, Number(packet.lat) || 0.0, false);
@@ -76,7 +75,6 @@ const PacketEngine = {
     view.setUint8(0, 0x53);
     view.setUint16(1, (msgId || 1000) & 0xFFFF, false);
     view.setUint8(3, 0xFF); // 0xFF = ACK
-    view.setUint8(4, this.DEFAULT_TTL);
 
     const crc = CRC16.compute(uint8.subarray(0, 38));
     view.setUint16(38, crc, false);
@@ -85,7 +83,6 @@ const PacketEngine = {
   },
 
   // Compact High-Speed Acoustic Emergency Beacon (14 bytes for SOS, 6 bytes for ACK / Test Ping)
-  // Supports multi-hop routing and large-distance mesh relaying
   encodeAcoustic(packet) {
     const isShort = packet.type === 0xFF || packet.type === 0xFD;
     const len = isShort ? 6 : 14;
@@ -132,9 +129,7 @@ const PacketEngine = {
         type,
         isBroadcast,
         isTest: type === 0xFD,
-        text: type === 0xFD ? "Acoustic Test Ping" : "ACK",
-        ttl: this.DEFAULT_TTL,
-        hops: 0
+        text: type === 0xFD ? "Acoustic Test Ping" : "ACK"
       };
     } else {
       if (uint8Array.length < 14) return null;
@@ -153,8 +148,7 @@ const PacketEngine = {
         lat,
         lon,
         accuracy: 10,
-        ttl: this.DEFAULT_TTL,
-        hops: 0,
+        ttl: 3,
         text: "Off-Grid Acoustic SOS",
         isPanic: type === 2
       };
