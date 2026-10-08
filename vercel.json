@@ -9,7 +9,10 @@
     { "src": "packetEngine.js", "use": "@vercel/static" },
     { "src": "crc16.js", "use": "@vercel/static" },
     { "src": "manifest.json", "use": "@vercel/static" },
-    { "src": "sw.js", "use": "@vercel/static" }
+    { "src": "sw.js", "use": "@vercel/static" },
+    { "src": "leaflet.css", "use": "@vercel/static" },
+    { "src": "leaflet.js", "use": "@vercel/static" },
+    { "src": "images/**", "use": "@vercel/static" }
   ],
   "routes": [
     { "handle": "filesystem" },
