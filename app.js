@@ -251,6 +251,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnCancelBeacon) {
     btnCancelBeacon.addEventListener("click", () => {
       stopBeaconRetryLoop();
+      restoreSenderNormalUi();
       const statusBadge = document.getElementById("senderModeBadge");
       if (statusBadge) statusBadge.innerText = "STAND DOWN";
     });
@@ -531,48 +532,367 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Green Confirmed State on Sender
+  // 🟢 Green Confirmed State on Sender (Zero Black Styling)
   function applySenderGreenPositiveState(msgId, time) {
     stopBeaconRetryLoop();
     const panelSender = document.getElementById("panelSender");
     const heading = document.getElementById("senderHeading");
     const modeBadge = document.getElementById("senderModeBadge");
-    const ackMsgBox = document.getElementById("senderAckMessage");
-    const ackTitle = document.getElementById("senderAckTitle");
-    const txtMessage = document.getElementById("txtMessage");
+    const panicContainer = document.getElementById("panicContainer");
+    const panicHeaderLabel = document.getElementById("panicHeaderLabel");
+    const panicBadge = document.getElementById("panicBadge");
+    const panicSubtext = document.getElementById("panicSubtext");
+    const btnInstantPanic = document.getElementById("btnInstantPanic");
+    const lblSurvivorName = document.getElementById("lblSurvivorName");
     const txtName = document.getElementById("txtName");
     const voiceBox = document.getElementById("voiceModuleBox");
+    const lblVoiceModule = document.getElementById("lblVoiceModule");
+    const btnRecordVoice = document.getElementById("btnRecordVoice");
+    const recordStatus = document.getElementById("recordStatus");
+    const recordTimer = document.getElementById("recordTimer");
+    const voiceAttachedBadge = document.getElementById("voiceAttachedBadge");
+    const lblTacticalNote = document.getElementById("lblTacticalNote");
+    const txtMessage = document.getElementById("txtMessage");
     const gpsBox = document.getElementById("gpsBox");
-    const btnInstantPanic = document.getElementById("btnInstantPanic");
+    const lblSenderGps = document.getElementById("lblSenderGps");
+    const gpsSenderPingDot = document.getElementById("gpsSenderPingDot");
+    const btnPinLocation = document.getElementById("btnPinLocation");
+    const btnGps = document.getElementById("btnGps");
+    const gpsLatCard = document.getElementById("gpsLatCard");
+    const gpsLonCard = document.getElementById("gpsLonCard");
+    const gpsLatDisplay = document.getElementById("gpsLatDisplay");
+    const gpsLonDisplay = document.getElementById("gpsLonDisplay");
+    const gpsAccuracy = document.getElementById("gpsAccuracy");
+    const gpsTimestamp = document.getElementById("gpsTimestamp");
+    const ackMsgBox = document.getElementById("senderAckMessage");
+    const ackTitle = document.getElementById("senderAckTitle");
     const btnSend = document.getElementById("btnSend");
+    const offlineAcousticBox = document.getElementById("offlineAcousticBox");
+    const lblOfflineAcoustic = document.getElementById("lblOfflineAcoustic");
+    const badgeOfflineAcoustic = document.getElementById("badgeOfflineAcoustic");
+    const txtOfflineAcoustic = document.getElementById("txtOfflineAcoustic");
+    const btnTestSpeaker = document.getElementById("btnTestSpeaker");
+    const btnAcousticPing = document.getElementById("btnAcousticPing");
+    const ackBanner = document.getElementById("ackBanner");
 
-    if (panelSender) panelSender.className = "w-full bg-neutral-900 border-2 border-emerald-400 p-5 rounded-xl flex flex-col justify-between shadow-2xl transition-all duration-500";
-    if (heading) {
-      heading.innerText = "✓ SOS ACKNOWLEDGED & CONFIRMED";
-      heading.className = "text-xs font-black text-emerald-400 tracking-widest uppercase transition-colors";
+    // 1. Entire Sender Container into Vibrant Soft Green
+    if (panelSender) {
+      panelSender.className = "w-full bg-emerald-50/95 border-2 border-emerald-500 p-6 rounded-3xl flex flex-col justify-between shadow-2xl shadow-emerald-500/15 transition-all duration-500";
     }
 
+    // 2. Header and Status Badges
+    if (heading) {
+      heading.innerText = "✓ SOS ACKNOWLEDGED & RESCUE CONFIRMED";
+      heading.className = "text-xs font-black text-emerald-950 tracking-widest uppercase transition-colors";
+    }
     if (modeBadge) {
       modeBadge.innerText = "STAND DOWN // RESCUE CONFIRMED";
-      modeBadge.className = "text-[9px] bg-emerald-400 text-black px-2 py-0.5 rounded font-bold uppercase tracking-wider transition-colors";
+      modeBadge.className = "text-[9px] bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-black uppercase tracking-wider transition-colors shadow-sm";
     }
 
+    // 3. Instant Panic Block Turns into Confirmed Green Hero Card
+    if (panicContainer) {
+      panicContainer.className = "mb-4 p-4 bg-emerald-100/90 border-2 border-emerald-500 rounded-2xl shadow-lg shadow-emerald-500/15 transition-all";
+    }
+    if (panicHeaderLabel) {
+      panicHeaderLabel.className = "text-[11px] font-black text-emerald-900 tracking-wider flex items-center gap-1.5 font-mono";
+      panicHeaderLabel.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-ping"></span> RESCUE DISPATCHED & CONFIRMED`;
+    }
+    if (panicBadge) {
+      panicBadge.className = "text-[9px] bg-emerald-600 text-white px-2.5 py-0.5 rounded-full font-black font-mono tracking-wider uppercase";
+      panicBadge.innerText = "✓ ACK CONFIRMED";
+    }
     if (btnInstantPanic) {
-      btnInstantPanic.innerHTML = `<span>✓</span> RESCUE DISPATCHED (CONFIRMED)`;
-      btnInstantPanic.className = "w-full bg-emerald-500 text-black font-black py-4 px-4 rounded-lg text-sm md:text-base tracking-widest shadow-xl flex items-center justify-center gap-2 uppercase transition-all duration-200";
+      btnInstantPanic.innerHTML = `<span>✓</span> RESCUE TEAM DISPATCHED & CONFIRMED`;
+      btnInstantPanic.className = "w-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black py-4 px-4 rounded-xl text-sm md:text-base tracking-widest shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 uppercase transition-all duration-200 border-2 border-emerald-400";
+    }
+    if (panicSubtext) {
+      panicSubtext.className = "text-[11px] text-emerald-900 text-center mt-2 font-bold";
+      panicSubtext.innerText = "✓ Base station responders confirmed beacon receipt! Team is dispatched to your live coordinates.";
+    }
+
+    // 4. Survivor Name Input
+    if (lblSurvivorName) {
+      lblSurvivorName.className = "text-[10px] text-emerald-900 font-black tracking-wider uppercase font-mono";
+    }
+    if (txtName) {
+      txtName.className = "w-full bg-white border-2 border-emerald-300 p-2.5 text-xs rounded-xl mt-1 text-emerald-950 placeholder:text-emerald-500 focus:outline-none focus:border-emerald-600 transition font-medium shadow-sm";
+    }
+
+    // 5. Category Selection Buttons
+    document.querySelectorAll(".type-btn").forEach((btn) => {
+      if (btn.classList.contains("active")) {
+        btn.className = "type-btn active ring-2 ring-emerald-600 bg-emerald-100/90 text-emerald-950 p-3 text-left rounded-xl transition border-2 border-emerald-400 font-bold shadow-sm";
+      } else {
+        btn.className = "type-btn bg-white border border-emerald-200 text-emerald-950 hover:bg-emerald-50 p-3 text-left rounded-xl transition font-medium shadow-sm";
+      }
+    });
+
+    // 6. Voice Module Box
+    if (voiceBox) {
+      voiceBox.className = "mb-3.5 bg-emerald-100/70 p-3.5 rounded-2xl border-2 border-emerald-300 transition-colors";
+    }
+    if (lblVoiceModule) {
+      lblVoiceModule.className = "text-[10px] font-black text-emerald-950 tracking-wider uppercase font-mono flex items-center gap-1";
+    }
+    if (voiceAttachedBadge) {
+      voiceAttachedBadge.className = "text-[9px] bg-emerald-200 text-emerald-900 border border-emerald-400 px-2 py-0.5 rounded-full font-mono font-bold";
+    }
+    if (recordTimer) {
+      recordTimer.className = "text-xs font-mono text-emerald-950 font-bold";
+    }
+    if (btnRecordVoice) {
+      btnRecordVoice.className = "bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition shadow-sm";
+    }
+    if (recordStatus) {
+      recordStatus.innerText = "✓ Voice note confirmed by rescue dispatch.";
+      recordStatus.className = "text-[10px] text-emerald-800 mt-1.5 font-medium";
+    }
+
+    // 7. Tactical Note Input
+    if (lblTacticalNote) {
+      lblTacticalNote.className = "text-[10px] text-emerald-900 font-black tracking-wider uppercase font-mono";
+    }
+    if (txtMessage) {
+      txtMessage.className = "w-full bg-white border-2 border-emerald-300 p-2.5 text-xs rounded-xl mt-1 text-emerald-950 placeholder:text-emerald-500 focus:outline-none focus:border-emerald-600 transition font-medium shadow-sm";
+    }
+
+    // 8. GPS Display Box
+    if (gpsBox) {
+      gpsBox.className = "mb-3.5 p-3.5 bg-white rounded-2xl border-2 border-emerald-500 font-mono shadow-md transition-all";
+    }
+    if (lblSenderGps) {
+      lblSenderGps.className = "text-[11px] font-black text-emerald-950 uppercase tracking-wider";
+    }
+    if (gpsSenderPingDot) {
+      gpsSenderPingDot.className = "w-2 h-2 rounded-full bg-emerald-600 animate-ping";
+    }
+    if (btnPinLocation) {
+      btnPinLocation.className = "bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg text-[10px] font-bold transition shadow-sm";
+    }
+    if (btnGps) {
+      btnGps.className = "bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-[10px] font-black transition shadow-sm";
+    }
+    if (gpsLatCard) {
+      gpsLatCard.className = "bg-emerald-50/80 group-hover:bg-emerald-100/90 p-2 rounded-xl border border-emerald-200 group-hover:border-emerald-600 transition shadow-sm";
+    }
+    if (gpsLonCard) {
+      gpsLonCard.className = "bg-emerald-50/80 group-hover:bg-emerald-100/90 p-2 rounded-xl border border-emerald-200 group-hover:border-emerald-600 transition shadow-sm";
+    }
+    if (gpsLatDisplay) {
+      gpsLatDisplay.className = "text-xs sm:text-sm font-black text-emerald-950 tracking-wider block font-mono truncate";
+    }
+    if (gpsLonDisplay) {
+      gpsLonDisplay.className = "text-xs sm:text-sm font-black text-emerald-950 tracking-wider block font-mono truncate";
+    }
+    if (gpsAccuracy) {
+      gpsAccuracy.className = "text-emerald-800 font-bold";
+    }
+    if (gpsTimestamp) {
+      gpsTimestamp.className = "text-emerald-700 font-medium";
+    }
+
+    // 9. Confirmed Message Box
+    if (ackTitle) {
+      ackTitle.innerText = `RESCUE CONFIRMED FOR BEACON #${msgId || 'LIVE'} AT ${time}`;
+    }
+    if (ackMsgBox) {
+      ackMsgBox.className = "mb-3.5 p-4 bg-emerald-100 border-2 border-emerald-600 rounded-2xl text-emerald-950 shadow-md";
+      ackMsgBox.classList.remove("hidden");
+    }
+
+    // 10. Transmit / Send Button
+    if (btnSend) {
+      btnSend.innerText = `✓ DISTRESS CONFIRMED BY RESCUE HQ`;
+      btnSend.className = "w-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black py-3.5 rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-emerald-600/25";
+    }
+
+    // 11. Offline Acoustic Toolkit
+    if (offlineAcousticBox) {
+      offlineAcousticBox.className = "mt-3.5 p-3.5 bg-emerald-100/50 border border-emerald-300 rounded-2xl";
+    }
+    if (lblOfflineAcoustic) {
+      lblOfflineAcoustic.className = "text-[10px] font-black text-emerald-950 font-mono uppercase tracking-wider";
+    }
+    if (badgeOfflineAcoustic) {
+      badgeOfflineAcoustic.className = "text-[9px] text-emerald-900 font-mono font-bold bg-white border border-emerald-300 px-2 py-0.5 rounded-full";
+    }
+    if (txtOfflineAcoustic) {
+      txtOfflineAcoustic.className = "text-[10px] text-emerald-800 mb-2 font-medium";
+    }
+    if (btnTestSpeaker) {
+      btnTestSpeaker.className = "bg-white hover:bg-emerald-50 border border-emerald-300 text-emerald-900 text-[11px] font-bold py-2 px-2 rounded-xl flex items-center justify-center gap-1.5 transition shadow-sm";
+    }
+    if (btnAcousticPing) {
+      btnAcousticPing.className = "bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold py-2 px-2 rounded-xl flex items-center justify-center gap-1.5 transition shadow-sm";
+    }
+
+    // 12. Top Banner (if displayed)
+    if (ackBanner) {
+      ackBanner.className = "bg-emerald-50 border-2 border-emerald-500 rounded-3xl p-4 flex items-start justify-between shadow-xl transition-all duration-300 mb-3 text-emerald-950";
+    }
+  }
+
+  // 🔄 Helper to cleanly restore Normal Lavender/Purple Theme with Red Panic button
+  function restoreSenderNormalUi() {
+    const panelSender = document.getElementById("panelSender");
+    const heading = document.getElementById("senderHeading");
+    const modeBadge = document.getElementById("senderModeBadge");
+    const panicContainer = document.getElementById("panicContainer");
+    const panicHeaderLabel = document.getElementById("panicHeaderLabel");
+    const panicBadge = document.getElementById("panicBadge");
+    const panicSubtext = document.getElementById("panicSubtext");
+    const btnInstantPanic = document.getElementById("btnInstantPanic");
+    const lblSurvivorName = document.getElementById("lblSurvivorName");
+    const txtName = document.getElementById("txtName");
+    const voiceBox = document.getElementById("voiceModuleBox");
+    const lblVoiceModule = document.getElementById("lblVoiceModule");
+    const btnRecordVoice = document.getElementById("btnRecordVoice");
+    const recordStatus = document.getElementById("recordStatus");
+    const recordTimer = document.getElementById("recordTimer");
+    const voiceAttachedBadge = document.getElementById("voiceAttachedBadge");
+    const lblTacticalNote = document.getElementById("lblTacticalNote");
+    const txtMessage = document.getElementById("txtMessage");
+    const gpsBox = document.getElementById("gpsBox");
+    const lblSenderGps = document.getElementById("lblSenderGps");
+    const gpsSenderPingDot = document.getElementById("gpsSenderPingDot");
+    const btnPinLocation = document.getElementById("btnPinLocation");
+    const btnGps = document.getElementById("btnGps");
+    const gpsLatCard = document.getElementById("gpsLatCard");
+    const gpsLonCard = document.getElementById("gpsLonCard");
+    const gpsLatDisplay = document.getElementById("gpsLatDisplay");
+    const gpsLonDisplay = document.getElementById("gpsLonDisplay");
+    const gpsAccuracy = document.getElementById("gpsAccuracy");
+    const gpsTimestamp = document.getElementById("gpsTimestamp");
+    const ackMsgBox = document.getElementById("senderAckMessage");
+    const btnSend = document.getElementById("btnSend");
+    const offlineAcousticBox = document.getElementById("offlineAcousticBox");
+    const lblOfflineAcoustic = document.getElementById("lblOfflineAcoustic");
+    const badgeOfflineAcoustic = document.getElementById("badgeOfflineAcoustic");
+    const txtOfflineAcoustic = document.getElementById("txtOfflineAcoustic");
+    const btnTestSpeaker = document.getElementById("btnTestSpeaker");
+    const btnAcousticPing = document.getElementById("btnAcousticPing");
+
+    if (panelSender) {
+      panelSender.className = "w-full bg-white border-2 border-purple-400 p-6 rounded-3xl flex flex-col justify-between shadow-2xl shadow-purple-500/10 transition-all duration-500";
+    }
+    if (heading) {
+      heading.innerText = "EMERGENCY DISTRESS BEACON";
+      heading.className = "text-xs font-black text-slate-950 tracking-widest uppercase transition-colors";
+    }
+    if (modeBadge) {
+      modeBadge.innerText = "TRANSMIT READY";
+      modeBadge.className = "text-[9px] bg-purple-100 text-purple-900 border border-purple-300 px-2.5 py-0.5 rounded-full font-black uppercase tracking-wider transition-colors";
+    }
+    if (panicContainer) {
+      panicContainer.className = "mb-4 p-4 bg-red-50/80 border-2 border-red-500 rounded-2xl shadow-lg shadow-red-500/10 transition-all";
+    }
+    if (panicHeaderLabel) {
+      panicHeaderLabel.className = "text-[11px] font-black text-red-600 tracking-wider flex items-center gap-1.5 font-mono";
+      panicHeaderLabel.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-red-600 animate-ping"></span> INSTANT PANIC TRANSMISSION`;
+    }
+    if (panicBadge) {
+      panicBadge.className = "text-[9px] bg-red-600 text-white px-2.5 py-0.5 rounded-full font-black font-mono tracking-wider uppercase";
+      panicBadge.innerText = "1-TAP DISPATCH";
+    }
+    if (btnInstantPanic) {
+      btnInstantPanic.innerHTML = `<span>🚨</span> TRANSMIT IMMEDIATE EMERGENCY GPS`;
+      btnInstantPanic.className = "w-full bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black py-4 px-4 rounded-xl text-sm md:text-base tracking-widest shadow-xl shadow-red-600/30 flex items-center justify-center gap-2 uppercase transition-all duration-200 border-2 border-red-400";
+    }
+    if (panicSubtext) {
+      panicSubtext.className = "text-[11px] text-red-700/90 text-center mt-2 font-medium";
+      panicSubtext.innerText = "Broadcasts acoustic loudspeaker tone & cloud mesh. Transmits live exact GPS + attached voice memo.";
+    }
+    if (lblSurvivorName) {
+      lblSurvivorName.className = "text-[10px] text-slate-600 font-black tracking-wider uppercase font-mono";
+    }
+    if (txtName) {
+      txtName.className = "w-full bg-purple-50/50 border-2 border-purple-200 p-2.5 text-xs rounded-xl mt-1 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-purple-600 transition font-medium";
+    }
+    document.querySelectorAll(".type-btn").forEach((btn, index) => {
+      if (btn.classList.contains("active") || index === (selectedType - 1)) {
+        btn.className = "type-btn active ring-2 ring-purple-600 bg-white p-3 text-left rounded-xl transition font-bold shadow-sm";
+      } else {
+        btn.className = "type-btn bg-white border border-purple-200 text-slate-900 hover:bg-purple-50 p-3 text-left rounded-xl transition font-medium shadow-sm";
+      }
+    });
+    if (voiceBox) {
+      voiceBox.className = "mb-3.5 bg-purple-50/60 p-3.5 rounded-2xl border-2 border-purple-200 transition-colors";
+    }
+    if (lblVoiceModule) {
+      lblVoiceModule.className = "text-[10px] font-black text-purple-900 tracking-wider uppercase font-mono flex items-center gap-1";
+    }
+    if (btnRecordVoice) {
+      btnRecordVoice.className = "bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition shadow-sm";
+    }
+    if (recordStatus) {
+      recordStatus.innerText = "Record a 4-second voice note. Even if recording is active when tapping Broadcast, it will automatically attach.";
+      recordStatus.className = "text-[10px] text-slate-500 mt-1.5";
+    }
+    if (lblTacticalNote) {
+      lblTacticalNote.className = "text-[10px] text-slate-600 font-black tracking-wider uppercase font-mono";
+    }
+    if (txtMessage) {
+      txtMessage.className = "w-full bg-purple-50/50 border-2 border-purple-200 p-2.5 text-xs rounded-xl mt-1 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-purple-600 transition font-medium";
+    }
+    if (gpsBox) {
+      gpsBox.className = "mb-3.5 p-3.5 bg-white rounded-2xl border-2 border-purple-500 font-mono shadow-md transition-all";
+    }
+    if (lblSenderGps) {
+      lblSenderGps.className = "text-[11px] font-black text-purple-900 uppercase tracking-wider";
+    }
+    if (gpsSenderPingDot) {
+      gpsSenderPingDot.className = "w-2 h-2 rounded-full bg-purple-600 animate-ping";
+    }
+    if (btnPinLocation) {
+      btnPinLocation.className = "bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-300 px-2.5 py-1 rounded-lg text-[10px] font-bold transition shadow-sm";
+    }
+    if (btnGps) {
+      btnGps.className = "bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-[10px] font-black transition shadow-sm";
+    }
+    if (gpsLatCard) {
+      gpsLatCard.className = "bg-purple-50/80 group-hover:bg-purple-100/90 p-2 rounded-xl border border-purple-200 group-hover:border-purple-600 transition shadow-sm";
+    }
+    if (gpsLonCard) {
+      gpsLonCard.className = "bg-purple-50/80 group-hover:bg-purple-100/90 p-2 rounded-xl border border-purple-200 group-hover:border-purple-600 transition shadow-sm";
+    }
+    if (gpsLatDisplay) {
+      gpsLatDisplay.className = "text-xs sm:text-sm font-black text-purple-950 tracking-wider block font-mono truncate";
+    }
+    if (gpsLonDisplay) {
+      gpsLonDisplay.className = "text-xs sm:text-sm font-black text-purple-950 tracking-wider block font-mono truncate";
+    }
+    if (gpsAccuracy) {
+      gpsAccuracy.className = "text-emerald-700 font-bold";
+    }
+    if (gpsTimestamp) {
+      gpsTimestamp.className = "text-slate-600 font-medium";
+    }
+    if (ackMsgBox) {
+      ackMsgBox.classList.add("hidden");
     }
     if (btnSend) {
-      btnSend.innerText = `✓ DISTRESS CONFIRMED BY HQ`;
-      btnSend.className = "w-full bg-neutral-800 text-neutral-400 font-bold py-3 rounded-lg text-xs uppercase tracking-wider transition";
+      btnSend.innerText = "📢 BROADCAST WITH NOTE / AUDIO";
+      btnSend.className = "w-full bg-purple-700 hover:bg-purple-800 text-white font-black py-3.5 rounded-xl text-xs uppercase tracking-wider transition shadow-md";
     }
-
-    if (txtMessage) txtMessage.className = "w-full bg-neutral-950 border border-white/40 p-2.5 text-xs rounded-lg mt-1 text-white focus:outline-none focus:border-white transition";
-    if (txtName) txtName.className = "w-full bg-neutral-950 border border-white/40 p-2.5 text-xs rounded-lg mt-1 text-white focus:outline-none focus:border-white transition";
-    if (voiceBox) voiceBox.className = "mb-3 bg-neutral-950 p-3 rounded-lg border border-white/40 transition-colors";
-    if (gpsBox) gpsBox.className = "mb-3 p-3 bg-neutral-950 rounded-lg border border-white/40 transition-colors font-mono";
-
-    if (ackTitle) ackTitle.innerText = `RESCUE CONFIRMED FOR BEACON #${msgId} AT ${time}`;
-    if (ackMsgBox) ackMsgBox.classList.remove("hidden");
+    if (offlineAcousticBox) {
+      offlineAcousticBox.className = "mt-3.5 p-3.5 bg-purple-50/60 border border-purple-200 rounded-2xl";
+    }
+    if (lblOfflineAcoustic) {
+      lblOfflineAcoustic.className = "text-[10px] font-black text-purple-950 font-mono uppercase tracking-wider";
+    }
+    if (badgeOfflineAcoustic) {
+      badgeOfflineAcoustic.className = "text-[9px] text-emerald-800 font-mono font-bold bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full";
+    }
+    if (txtOfflineAcoustic) {
+      txtOfflineAcoustic.className = "text-[10px] text-slate-600 mb-2 font-medium";
+    }
+    if (btnTestSpeaker) {
+      btnTestSpeaker.className = "bg-white hover:bg-purple-50 border border-purple-300 text-purple-900 text-[11px] font-bold py-2 px-2 rounded-xl flex items-center justify-center gap-1.5 transition shadow-sm";
+    }
+    if (btnAcousticPing) {
+      btnAcousticPing.className = "bg-white hover:bg-emerald-50 border border-emerald-300 text-emerald-800 text-[11px] font-bold py-2 px-2 rounded-xl flex items-center justify-center gap-1.5 transition shadow-sm";
+    }
   }
 
   function resetSenderInputs() {
@@ -593,12 +913,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (recordStatus) {
       recordStatus.innerText = "✓ SOS dispatched over mesh network.";
-      recordStatus.className = "text-[10px] text-white mt-1.5";
+      recordStatus.className = "text-[10px] text-slate-600 mt-1.5";
     }
     if (recordTimer) recordTimer.innerText = "00:00";
     if (btnRecordVoice) {
       btnRecordVoice.innerText = "🎙️ Hold/Tap to Record Voice";
-      btnRecordVoice.className = "bg-white hover:bg-neutral-200 text-black text-xs font-bold py-2 px-3 rounded-md flex items-center gap-1.5 transition";
+      btnRecordVoice.className = "bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition shadow-sm";
     }
     const btnClearVoice = document.getElementById("btnClearVoice");
     if (btnClearVoice) btnClearVoice.classList.add("hidden");
@@ -607,7 +927,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     selectedType = 1;
     document.querySelectorAll(".type-btn").forEach((btn, index) => {
-      btn.classList.remove("active", "ring-2", "ring-purple-600", "ring-white");
+      btn.classList.remove("active", "ring-2", "ring-purple-600", "ring-white", "ring-emerald-600");
       if (index === 0) btn.classList.add("active", "ring-2", "ring-purple-600");
     });
   }
@@ -729,15 +1049,15 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   tabLogin.addEventListener("click", () => {
-    tabLogin.className = "flex-1 py-1 rounded font-bold bg-white text-black transition";
-    tabCreate.className = "flex-1 py-1 rounded font-bold text-neutral-400 hover:text-white transition";
+    tabLogin.className = "flex-1 py-1 rounded-lg font-bold bg-purple-600 text-white shadow-sm transition";
+    tabCreate.className = "flex-1 py-1 rounded-lg font-bold text-purple-900/70 hover:text-purple-950 transition";
     sectionLogin.classList.remove("hidden");
     sectionCreate.classList.add("hidden");
   });
 
   tabCreate.addEventListener("click", () => {
-    tabCreate.className = "flex-1 py-1 rounded font-bold bg-white text-black transition";
-    tabLogin.className = "flex-1 py-1 rounded font-bold text-neutral-400 hover:text-white transition";
+    tabCreate.className = "flex-1 py-1 rounded-lg font-bold bg-purple-600 text-white shadow-sm transition";
+    tabLogin.className = "flex-1 py-1 rounded-lg font-bold text-purple-900/70 hover:text-purple-950 transition";
     sectionCreate.classList.remove("hidden");
     sectionLogin.classList.add("hidden");
   });
@@ -888,15 +1208,15 @@ document.addEventListener("DOMContentLoaded", () => {
       if (isVoiceAlertsEnabled) {
         if (voiceAlertDot) voiceAlertDot.className = "w-2 h-2 rounded-full bg-emerald-400";
         if (voiceAlertText) {
-          voiceAlertText.className = "text-emerald-300 font-bold text-[10px]";
+          voiceAlertText.className = "text-emerald-700 font-bold text-[10px]";
           voiceAlertText.innerText = "VOICE: ON";
         }
         TacticalSpeech.speak("Tactical voice alerts active.", true);
       } else {
         if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-        if (voiceAlertDot) voiceAlertDot.className = "w-2 h-2 rounded-full bg-neutral-500";
+        if (voiceAlertDot) voiceAlertDot.className = "w-2 h-2 rounded-full bg-slate-400";
         if (voiceAlertText) {
-          voiceAlertText.className = "text-neutral-400 font-bold text-[10px]";
+          voiceAlertText.className = "text-slate-500 font-bold text-[10px]";
           voiceAlertText.innerText = "VOICE: MUTED";
         }
       }
@@ -1002,7 +1322,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (btnRecordVoice) {
       btnRecordVoice.innerText = "🔄 Re-Record Voice";
-      btnRecordVoice.className = "bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold py-2 px-3 rounded-md flex items-center gap-1.5 transition";
+      btnRecordVoice.className = "bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition shadow-sm";
     }
     if (recordTimer) recordTimer.innerText = "00:04";
     if (typeof onCompletedCallback === 'function') {
@@ -1164,11 +1484,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (voiceAttachedBadge) voiceAttachedBadge.classList.add("hidden");
         if (recordStatus) {
           recordStatus.innerText = "Record a situational voice clip to attach to your SOS.";
-          recordStatus.className = "text-[10px] text-neutral-400 mt-1.5";
+          recordStatus.className = "text-[10px] text-slate-500 mt-1.5";
         }
         if (recordTimer) recordTimer.innerText = "00:00";
         btnRecordVoice.innerText = "🎙️ Record Voice Note";
-        btnRecordVoice.className = "bg-white hover:bg-neutral-200 text-black text-xs font-bold py-2 px-3 rounded-md flex items-center gap-1.5 transition";
+        btnRecordVoice.className = "bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition shadow-sm";
       });
     }
   }
@@ -1201,7 +1521,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (btnRecord) {
       btnRecord.innerText = "🔄 Re-Record Instruction";
-      btnRecord.className = "bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-bold py-1.5 px-3 rounded-md flex items-center gap-1.5 border border-white/30 transition";
+      btnRecord.className = "bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-1.5 px-3 rounded-xl flex items-center gap-1.5 border border-purple-400/30 transition shadow-sm";
     }
     if (typeof onCompletedCallback === 'function') {
       rescuerVoiceResolvePromise = onCompletedCallback;
@@ -1525,7 +1845,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const logEl = document.getElementById("ackDispatchLog");
     if (logEl) {
       logEl.innerText = `Transmitting acoustic audio tones and cloud mesh packet for ${labelId}...`;
-      logEl.className = "text-[10px] text-amber-300 font-mono animate-pulse bg-neutral-900/80 p-2 rounded border border-amber-400/30";
+      logEl.className = "text-[10px] text-amber-800 font-mono animate-pulse bg-amber-50 p-2.5 rounded-xl border border-amber-300";
     }
 
     // 1. Acoustic ACK Transmission (Double-burst for 99.9% physical airwave capture)
@@ -1565,11 +1885,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // 3. Synchronize All UI Elements
     if (triggerBtn) {
       triggerBtn.innerHTML = `<span>✓</span> ACK DISPATCHED (${labelId} AT ${ackTime})`;
-      triggerBtn.className = "w-full bg-neutral-800 text-emerald-400 font-black text-xs md:text-sm py-3 px-4 rounded-lg shadow-xl flex items-center justify-center gap-2 uppercase tracking-wider font-mono border border-emerald-400/40";
+      triggerBtn.className = "w-full bg-emerald-600 text-white font-black text-xs md:text-sm py-3 px-4 rounded-xl shadow-xl flex items-center justify-center gap-2 uppercase tracking-wider font-mono border-2 border-emerald-400";
       setTimeout(() => {
         triggerBtn.disabled = false;
         triggerBtn.innerHTML = `<span>🛡️</span> SEND RESCUE ACK TO SENDER (AIRWAVES + CLOUD) ➔`;
-        triggerBtn.className = "w-full bg-emerald-400 hover:bg-emerald-300 active:scale-95 text-black font-black text-xs md:text-sm py-3 px-4 rounded-lg shadow-xl flex items-center justify-center gap-2 uppercase tracking-wider font-mono transition";
+        triggerBtn.className = "w-full bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-black text-xs md:text-sm py-3 px-4 rounded-xl shadow-xl flex items-center justify-center gap-2 uppercase tracking-wider font-mono transition";
       }, 5000);
     }
 
@@ -1577,18 +1897,18 @@ document.addEventListener("DOMContentLoaded", () => {
     if (bannerAckBtn && bannerAckBtn !== triggerBtn) {
       bannerAckBtn.innerHTML = `<span>✓</span> ACK DISPATCHED (${labelId})`;
       bannerAckBtn.disabled = true;
-      bannerAckBtn.className = "bg-neutral-800 text-neutral-400 font-bold text-xs px-3.5 py-2 rounded-lg cursor-not-allowed";
+      bannerAckBtn.className = "bg-emerald-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl cursor-not-allowed";
     }
 
     const beaconSummaryEl = document.getElementById("latestBeaconSummary");
     if (beaconSummaryEl) {
       beaconSummaryEl.innerText = `CONFIRMED: Rescue ACK dispatched for ${labelId} at ${ackTime}`;
-      beaconSummaryEl.className = "bg-neutral-900 border border-emerald-400/50 p-2 rounded text-[11px] text-emerald-400 font-mono font-bold truncate";
+      beaconSummaryEl.className = "bg-emerald-50 border border-emerald-400/50 p-2.5 rounded-xl text-[11px] text-emerald-950 font-mono font-bold truncate";
     }
 
     if (logEl) {
       logEl.innerText = `✓ SUCCESS: Rescue ACK transmitted for ${labelId} at ${ackTime} via Acoustic Loudspeaker (1200-2200Hz) & Global Cloud Mesh.`;
-      logEl.className = "text-[10px] text-emerald-400 font-mono font-bold bg-neutral-900/80 p-2 rounded border border-emerald-400/30";
+      logEl.className = "text-[10px] text-emerald-900 font-mono font-bold bg-emerald-50 p-2.5 rounded-xl border border-emerald-300";
     }
 
     // Update any feed card ACK buttons for this beacon
@@ -1596,7 +1916,7 @@ document.addEventListener("DOMContentLoaded", () => {
       document.querySelectorAll(`.card-ack-btn-${msgId}`).forEach(btn => {
         btn.innerText = `✓ ACK DISPATCHED (${ackTime})`;
         btn.disabled = true;
-        btn.className = "ack-btn flex-1 bg-neutral-800 text-neutral-500 font-bold py-1.5 px-3 rounded cursor-not-allowed text-xs";
+        btn.className = "ack-btn flex-1 bg-emerald-600 text-white font-bold py-1.5 px-3 rounded-lg cursor-not-allowed text-xs";
       });
     }
   }
@@ -1751,19 +2071,19 @@ document.addEventListener("DOMContentLoaded", () => {
       let voiceContainer = card.querySelector(".voice-player-container");
       if (!voiceContainer) {
         voiceContainer = document.createElement("div");
-        voiceContainer.className = "voice-player-container bg-black p-2.5 rounded-lg border-2 border-emerald-400/80 flex flex-col gap-1.5 shadow-inner my-1";
+        voiceContainer.className = "voice-player-container bg-purple-50/90 p-3 rounded-2xl border-2 border-purple-300 flex flex-col gap-1.5 shadow-sm my-1.5";
         voiceContainer.innerHTML = `
           <div class="flex justify-between items-center">
-            <span class="text-[10px] text-emerald-300 font-bold font-mono flex items-center gap-1">
+            <span class="text-[10px] text-purple-900 font-bold font-mono flex items-center gap-1">
               <span>🎙️</span> ${survivorName.toUpperCase()}'S VOICE NOTE (${currentTime}):
             </span>
-            <span class="text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.5 rounded font-mono font-bold animate-pulse">AUDIO READY</span>
+            <span class="text-[9px] bg-purple-100 text-purple-900 border border-purple-300 px-1.5 py-0.5 rounded-lg font-mono font-bold animate-pulse">AUDIO READY</span>
           </div>
           <div class="flex items-center gap-2">
-            <button type="button" class="btn-play-voice-${packet.msgId} bg-emerald-400 hover:bg-emerald-300 text-black font-black text-[11px] px-3 py-1 rounded flex items-center gap-1 shadow transition active:scale-95">
+            <button type="button" class="btn-play-voice-${packet.msgId} bg-purple-600 hover:bg-purple-700 text-white font-black text-[11px] px-3 py-1 rounded-xl flex items-center gap-1 shadow transition active:scale-95">
               ▶️ Play Voice
             </button>
-            <audio id="feedVoiceAudio_${packet.msgId}" controls src="${packet.voiceAudio}" class="flex-1 h-7 rounded"></audio>
+            <audio id="feedVoiceAudio_${packet.msgId}" controls src="${packet.voiceAudio}" class="flex-1 h-7 rounded-lg"></audio>
           </div>
         `;
         const btnRow = card.querySelector(".flex.flex-wrap.gap-2.mt-1") || card.querySelector(".flex.gap-2.mt-1");
@@ -1914,7 +2234,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnBannerSendAck) {
       btnBannerSendAck.disabled = false;
       btnBannerSendAck.innerHTML = `<span>🛡️</span> SEND RESCUE ACK ➔`;
-      btnBannerSendAck.className = "bg-emerald-400 hover:bg-emerald-300 text-black font-black text-xs px-3.5 py-2 rounded-lg transition uppercase tracking-wider flex items-center gap-1.5 shadow-xl active:scale-95";
+      btnBannerSendAck.className = "bg-purple-600 hover:bg-purple-700 text-white font-black text-xs px-4 py-3 rounded-xl transition uppercase tracking-wider flex items-center gap-1.5 shadow-lg active:scale-95";
     }
 
     // Update Rescue ACK Console Status & Button
@@ -1926,13 +2246,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const beaconSummaryEl = document.getElementById("latestBeaconSummary");
     if (beaconSummaryEl) {
       beaconSummaryEl.innerText = `ACTIVE BEACON #${packet.msgId} (${survivorName}) - Lat: ${validLat.toFixed(6)}, Lon: ${validLon.toFixed(6)}`;
-      beaconSummaryEl.className = "bg-neutral-900 border border-emerald-400/50 p-2 rounded text-[11px] text-emerald-300 font-mono font-bold truncate animate-pulse";
+      beaconSummaryEl.className = "bg-purple-50 border border-purple-400 p-2.5 rounded-xl text-[11px] text-purple-950 font-mono font-bold truncate animate-pulse";
     }
 
     const logEl = document.getElementById("ackDispatchLog");
     if (logEl) {
       logEl.innerText = `ALERT: Distress beacon #${packet.msgId} detected. Ready to transmit Rescue ACK.`;
-      logEl.className = "text-[10px] text-amber-300 font-mono bg-neutral-900/80 p-2 rounded border border-amber-400/30";
+      logEl.className = "text-[10px] text-purple-900 font-mono bg-purple-50 p-2.5 rounded-xl border border-purple-300";
     }
 
     if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
@@ -2164,13 +2484,13 @@ document.addEventListener("DOMContentLoaded", () => {
         diagCloud.innerText = "○ RECONNECTING RELAY...";
       }
     } else {
-      if (dot) dot.className = "w-2 h-2 rounded-full bg-neutral-500";
+      if (dot) dot.className = "w-2 h-2 rounded-full bg-slate-400";
       if (text) {
-        text.className = "text-neutral-400 font-bold text-[10px]";
+        text.className = "text-slate-500 font-bold text-[10px]";
         text.innerText = "MESH: OFFLINE";
       }
       if (diagCloud) {
-        diagCloud.className = "text-neutral-400 font-bold";
+        diagCloud.className = "text-slate-500 font-bold";
         diagCloud.innerText = "✕ DISCONNECTED";
       }
     }
@@ -2180,7 +2500,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const diagPeers = document.getElementById("diagPeers");
     if (diagPeers) {
       diagPeers.innerText = `${data.count} peer${data.count === 1 ? '' : 's'} online in room`;
-      diagPeers.className = data.count > 0 ? "text-emerald-400 font-bold" : "text-neutral-400 font-bold";
+      diagPeers.className = data.count > 0 ? "text-emerald-700 font-bold" : "text-slate-500 font-bold";
     }
   }
 
