@@ -732,10 +732,6 @@ document.addEventListener("DOMContentLoaded", () => {
       ackBanner.className = "bg-emerald-50 border-2 border-emerald-500 rounded-3xl p-4 flex items-start justify-between shadow-xl transition-all duration-300 mb-3 text-emerald-950";
     }
 
-    // 13. Hands-Free Gesture Camera Container into Green Confirmed Theme
-    if (window.GestureCamera && typeof window.GestureCamera.applyConfirmedTheme === 'function') {
-      window.GestureCamera.applyConfirmedTheme(true);
-    }
   }
 
   // 🔄 Helper to cleanly restore Normal Lavender/Purple Theme with Red Panic button
@@ -899,10 +895,6 @@ document.addEventListener("DOMContentLoaded", () => {
       btnAcousticPing.className = "bg-white hover:bg-emerald-50 border border-emerald-300 text-emerald-800 text-[11px] font-bold py-2 px-2 rounded-xl flex items-center justify-center gap-1.5 transition shadow-sm";
     }
 
-    // Hands-Free Gesture Camera Container into Normal Purple Theme
-    if (window.GestureCamera && typeof window.GestureCamera.applyConfirmedTheme === 'function') {
-      window.GestureCamera.applyConfirmedTheme(false);
-    }
   }
 
   function resetSenderInputs() {
@@ -1029,9 +1021,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function switchToReceiver() {
     currentRole = 'receiver';
-    if (window.GestureCamera && typeof window.GestureCamera.stop === 'function') {
-      window.GestureCamera.stop();
-    }
     if (meshBridge) meshBridge.setRole('receiver');
     modem.startListening();
     updateMicStatusUi();
@@ -1769,35 +1758,6 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.innerHTML = originalHtml;
   });
 
-  // ==========================================
-  // 📷 HANDS-FREE GESTURE CAMERA SOS DISPATCH WIRING & SAFETY PIPELINE
-  // ==========================================
-  window.executePanicSosDispatch = async function({ source = 'gesture', gestureName = 'FIST', distressType = 2, message = '' } = {}) {
-    console.log(`🚨 executePanicSosDispatch triggered: [${gestureName}] via [${source}] (Type: ${distressType})`);
-    if (typeof TacticalSpeech !== 'undefined' && typeof TacticalSpeech.speak === 'function') {
-      TacticalSpeech.speak(`Emergency ${gestureName} hand sign detected! Transmitting live distress beacon to rescue team.`, true);
-    }
-    return await executeSosDispatch({
-      isPanic: true,
-      customNote: message || `CAMERA GESTURE SOS: ${gestureName}`,
-      customType: distressType
-    });
-  };
-
-  if (typeof window.GestureCamera !== 'undefined') {
-    window.GestureCamera.init({
-      onTrigger: async (gesture) => {
-        const u = String(gesture).toUpperCase();
-        const distressType = u === 'FIST' ? 2 : (u === 'POINTING' ? 1 : (u === 'V_SIGN' ? 4 : 2));
-        await window.executePanicSosDispatch({
-          source: 'gesture',
-          gestureName: u,
-          distressType: distressType,
-          message: `CAMERA GESTURE SOS: ${u}`
-        });
-      }
-    });
-  }
 
   // Standard Transmit Action with Immediate Non-Blocking Audio Output
   document.getElementById("btnSend").addEventListener("click", async () => {
