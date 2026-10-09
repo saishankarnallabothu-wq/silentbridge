@@ -1,5 +1,5 @@
 // sw.js - Offline Service Worker Cache (Network-First with Instant Updates)
-const CACHE_NAME = 'silentbridge-v28';
+const CACHE_NAME = 'silentbridge-v29';
 const ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const ASSETS = [
   './paho-mqtt.js',
   './meshBridge.js',
   './audioModem.js',
+  './gestureCamera.js',
   './app.js',
   './manifest.json'
 ];

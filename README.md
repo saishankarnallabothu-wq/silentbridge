@@ -18,6 +18,7 @@
 * **🚨 1-Tap Emergency Panic Dispatch:** Instant broadcast trigger that locks live satellite GPS coordinates and alerts nearby rescue hubs immediately with auto-retransmit until ACK is received.
 * **🛡️ Secure Rescuer Command HQ:** Dedicated responder portal protected by passcode authentication (Default: `RESCUE2026`), featuring a dark-mode tactical map (Leaflet.js) centering directly on survivor pins, incident feeds, and two-way ACK confirmations.
 * **✅ Verified Rescue Confirmation (ACK):** Sends acknowledgement packets back to survivors, visually confirming rescue deployment on the sender's device with green status, haptic feedback, and voice readouts.
+* **📷 Hands-Free Gesture Camera SOS Trigger (1.5s Hold):** Survivors unable to tap the screen can hold an emergency hand gesture (✊ Fist, ☝️ Pointing finger, or ✌️ V-Sign) in front of the device camera. Holding the sign continuously for 1.5 seconds automatically triggers the distress dispatch, transferring live satellite GPS coordinates, identity, and audio memo directly to rescuers.
 * **📡 Room / Network Channel Pairing:** Pair devices instantly using room codes (e.g. `#GLOBAL` or `?room=TEAM-1`) with 1-click shareable pairing links and test ping diagnostics.
 
 ---
