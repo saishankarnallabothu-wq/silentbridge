@@ -7,6 +7,9 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Google MediaPipe AI Hand Landmark Engine for Ultra-Accurate Gestures -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
   <link rel="manifest" href="manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -655,9 +658,10 @@
             </div>
           </a>
           <div class="text-[10px] text-slate-600 flex flex-wrap justify-between items-center gap-1">
-            <span id="gpsAccuracy" class="text-emerald-700 font-bold">Accuracy: Searching satellites...</span>
+            <span id="gpsAccuracy" class="text-emerald-700 font-bold">📍 EXACT LOCATION: Acquiring live satellites...</span>
             <span id="gpsTimestamp">Last synced: --:--:--</span>
           </div>
+          <div id="txtExactAddress" class="text-[11px] font-bold text-purple-950 mt-1.5 truncate bg-purple-50/80 px-2.5 py-1 rounded-xl border border-purple-200 hidden"></div>
         </div>
 
         <!-- Active Beacon Retrying Box -->
@@ -793,7 +797,10 @@
         <span class="text-[10px] text-slate-500 font-mono">Click marker coordinates to open in Google Maps ↗</span>
       </div>
 
-      <div id="map" class="h-56 md:h-64 rounded-2xl border-2 border-purple-400 shadow-xl overflow-hidden"></div>
+      <div id="map" class="h-56 md:h-64 rounded-2xl border-2 border-purple-400 shadow-xl overflow-hidden cursor-crosshair"></div>
+      <div class="text-[10px] text-purple-900 font-mono font-bold my-1 text-center bg-purple-50/80 py-1.5 px-3 rounded-xl border border-purple-300 shadow-sm flex items-center justify-center gap-1.5">
+        <span>📌</span> <span>Click or tap anywhere on map to pin your EXACT real-world location</span>
+      </div>
 
       <div class="flex-1 bg-white border-2 border-purple-300/90 p-5 rounded-3xl flex flex-col min-h-[240px] shadow-xl text-slate-900">
         <div class="flex justify-between items-center mb-3">
@@ -819,18 +826,18 @@
     if ('caches' in window) {
       caches.keys().then(function(keys) {
         keys.forEach(function(k) {
-          if (k !== 'silentbridge-v38') caches.delete(k);
+          if (k !== 'silentbridge-v39') caches.delete(k);
         });
       });
     }
   </script>
   <!-- High-Precision 100% Offline Pure-JS Canvas Hand & Gesture Engine -->
-  <script src="crc16.js?v=38"></script>
-  <script src="packetEngine.js?v=38"></script>
-  <script src="paho-mqtt.js?v=38"></script>
-  <script src="meshBridge.js?v=38"></script>
-  <script src="audioModem.js?v=38"></script>
-  <script src="gestureCamera.js?v=38"></script>
-  <script src="app.js?v=38"></script>
+  <script src="crc16.js?v=39"></script>
+  <script src="packetEngine.js?v=39"></script>
+  <script src="paho-mqtt.js?v=39"></script>
+  <script src="meshBridge.js?v=39"></script>
+  <script src="audioModem.js?v=39"></script>
+  <script src="gestureCamera.js?v=39"></script>
+  <script src="app.js?v=39"></script>
 </body>
 </html>

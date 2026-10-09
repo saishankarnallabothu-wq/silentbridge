@@ -40,14 +40,49 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (accEl) {
-      if (accuracy != null) {
-        accEl.innerText = `Accuracy: ±${Math.round(accuracy)}m (${statusDesc})`;
+      if (lat != null && lon != null) {
+        accEl.innerText = `📍 EXACT PINNED LOCATION (${statusDesc})`;
       } else {
-        accEl.innerText = statusDesc;
+        accEl.innerText = `📍 EXACT LOCATION: ${statusDesc}`;
       }
+    }
+    const addrEl = document.getElementById("txtExactAddress");
+    if (addrEl && currentExactAddress) {
+      addrEl.innerText = `🏠 ${currentExactAddress}`;
+      addrEl.classList.remove("hidden");
     }
     if (timeEl) {
       timeEl.innerText = `Last synced: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+    }
+  }
+
+  // Reverse geocode exact physical street address using OpenStreetMap Nominatim
+  let currentExactAddress = null;
+  async function reverseGeocodeExactAddress(lat, lon) {
+    if (!lat || !lon) return;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`, {
+        signal: controller.signal,
+        headers: { 'Accept': 'application/json' }
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.display_name) {
+          const parts = data.display_name.split(',');
+          currentExactAddress = parts.slice(0, 3).join(',').trim();
+          const addrEl = document.getElementById("txtExactAddress");
+          if (addrEl) {
+            addrEl.innerText = `🏠 ${currentExactAddress}`;
+            addrEl.classList.remove("hidden");
+          }
+          console.log(`🏠 Exact address identified: ${currentExactAddress}`);
+        }
+      }
+    } catch (e) {
+      console.warn("Reverse geocode notice:", e);
     }
   }
 
@@ -268,6 +303,21 @@ document.addEventListener("DOMContentLoaded", () => {
         attribution: '© OpenStreetMap'
       }).addTo(map);
       markersLayer = L.layerGroup().addTo(map);
+
+      // Interactive pin placement on click / tap anywhere on OpenStreetMap
+      map.on('click', async (e) => {
+        const clickedLat = Number(e.latlng.lat);
+        const clickedLon = Number(e.latlng.lng);
+        console.log(`📌 User clicked map to pin exact physical location: ${clickedLat}, ${clickedLon}`);
+        handleHighAccuracyGpsFix({
+          coords: {
+            latitude: clickedLat,
+            longitude: clickedLon,
+            accuracy: 1
+          }
+        }, "Exact Location Pinned on Map");
+        await reverseGeocodeExactAddress(clickedLat, clickedLon);
+      });
     } catch (mapErr) {
       console.warn("Leaflet map initialization note:", mapErr);
     }
@@ -338,7 +388,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function handleHighAccuracyGpsFix(pos, label = "Hardware Satellite Lock") {
     const lat = pos.coords.latitude;
     const lon = pos.coords.longitude;
-    const acc = Math.round(pos.coords.accuracy) || 5;
+    const acc = Math.round(pos.coords.accuracy) || 1;
 
     currentLat = lat;
     currentLon = lon;
@@ -356,7 +406,8 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {}
 
     updateSenderGpsDisplay(currentLat, currentLon, currentAccuracy, label);
-    console.log(`🎯 Exact GPS Lock Acquired: ${currentLat.toFixed(6)}, ${currentLon.toFixed(6)} (±${currentAccuracy}m)`);
+    reverseGeocodeExactAddress(currentLat, currentLon);
+    console.log(`🎯 Exact GPS Lock Acquired: ${currentLat.toFixed(6)}, ${currentLon.toFixed(6)}`);
 
     // Center and update Leaflet map onto exact real coordinates
     if (typeof L !== 'undefined' && map) {
@@ -368,14 +419,14 @@ document.addEventListener("DOMContentLoaded", () => {
             color: '#10b981',
             fillColor: '#10b981',
             fillOpacity: 0.25,
-            radius: currentAccuracy
+            radius: Math.max(10, currentAccuracy)
           }).addTo(markersLayer);
           selfMarker.bindPopup(`
             <div class="font-mono text-xs">
-              <b style="color:#059669;">📍 YOUR EXACT CURRENT LOCATION</b><br>
+              <b style="color:#059669;">📍 YOUR EXACT PHYSICAL LOCATION</b><br>
               LAT: ${currentLat.toFixed(6)}<br>
               LON: ${currentLon.toFixed(6)}<br>
-              <span style="color:#64748b; font-size:10px;">Accuracy: ±${currentAccuracy}m (${label})</span>
+              <span style="color:#059669; font-size:10px; font-weight:bold;">📍 EXACT PINPOINT (${label})</span>
             </div>
           `);
           map.setView([currentLat, currentLon], 16);
@@ -2441,14 +2492,14 @@ document.addEventListener("DOMContentLoaded", () => {
     // Update GPS telemetry & exact location in Top Banner if coordinates provided
     if (!isNaN(validLat) && !isNaN(validLon)) {
       const sosCoordsText = document.getElementById("sosCoordsText");
-      if (sosCoordsText) sosCoordsText.innerText = `GPS: ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)`;
+      if (sosCoordsText) sosCoordsText.innerText = `📍 EXACT GPS: ${validLat.toFixed(6)}, ${validLon.toFixed(6)}`;
       const sosLatText = document.getElementById("sosLatText");
       const sosLonText = document.getElementById("sosLonText");
       const sosAccuracyBadge = document.getElementById("sosAccuracyBadge");
       const sosLocationLink = document.getElementById("sosLocationLink");
       if (sosLatText) sosLatText.innerText = validLat.toFixed(6);
       if (sosLonText) sosLonText.innerText = validLon.toFixed(6);
-      if (sosAccuracyBadge) sosAccuracyBadge.innerText = `Accuracy: ±${validAcc}m`;
+      if (sosAccuracyBadge) sosAccuracyBadge.innerText = `📍 EXACT PINPOINT GPS`;
       if (sosLocationLink) {
         sosLocationLink.href = `https://www.google.com/maps?q=${validLat.toFixed(6)},${validLon.toFixed(6)}`;
       }
@@ -2608,9 +2659,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const sosCoordsText = document.getElementById("sosCoordsText");
     if (sosCoordsText) {
-      sosCoordsText.innerText = `GPS: ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)`;
+      sosCoordsText.innerText = `📍 EXACT GPS: ${validLat.toFixed(6)}, ${validLon.toFixed(6)}`;
     } else {
-      document.getElementById("sosSubtitle").innerText = `GPS: ${validLat.toFixed(6)}, ${validLon.toFixed(6)} (±${validAcc}m)`;
+      document.getElementById("sosSubtitle").innerText = `📍 EXACT GPS: ${validLat.toFixed(6)}, ${validLon.toFixed(6)}`;
     }
 
     const sosLatText = document.getElementById("sosLatText");
@@ -2619,7 +2670,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const sosLocationLink = document.getElementById("sosLocationLink");
     if (sosLatText) sosLatText.innerText = validLat.toFixed(6);
     if (sosLonText) sosLonText.innerText = validLon.toFixed(6);
-    if (sosAccuracyBadge) sosAccuracyBadge.innerText = `Accuracy: ±${validAcc}m`;
+    if (sosAccuracyBadge) sosAccuracyBadge.innerText = `📍 EXACT PINPOINT GPS`;
     if (sosLocationLink) {
       sosLocationLink.href = `https://www.google.com/maps?q=${validLat.toFixed(6)},${validLon.toFixed(6)}`;
     }
@@ -2732,7 +2783,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div style="font-size:13px; font-weight:900; color:#0f172a; letter-spacing:0.5px;">LAT: ${validLat.toFixed(6)}</div>
                 <div style="font-size:13px; font-weight:900; color:#0f172a; letter-spacing:0.5px;">LON: ${validLon.toFixed(6)}</div>
                 <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; color:#64748b; margin-top:5px; padding-top:4px; border-top:1px solid #e9d5ff;">
-                  <span style="color:#059669; font-weight:bold;">Accuracy: ±${validAcc}m</span>
+                  <span style="color:#059669; font-weight:bold;">📍 EXACT PINPOINT GPS</span>
                   <span style="color:#2563eb; font-weight:bold; text-decoration:underline;">Open in Maps ↗</span>
                 </div>
               </div>
@@ -2841,7 +2892,7 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </a>
         <div class="flex justify-between items-center text-[10px] text-slate-600 pt-0.5">
-          <span class="text-emerald-700 font-bold">Accuracy: ±${validAcc}m</span>
+          <span class="text-emerald-700 font-bold">📍 EXACT SURVIVOR COORDINATES</span>
           <a href="https://www.google.com/maps?q=${validLat.toFixed(6)},${validLon.toFixed(6)}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-mono text-[10px] font-bold">
             Open in Google Maps ↗
           </a>

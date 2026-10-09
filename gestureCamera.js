@@ -287,6 +287,171 @@
   let animationFrameId = null;
   let isUiBound = false;
 
+  // =========================================================================
+  // 🖐️ MediaPipe AI Landmark Engine & Voting Filter
+  // =========================================================================
+  let mediaPipeHands = null;
+  let isMediaPipeReady = false;
+  let isMediaPipeProcessing = false;
+  let recentGestureVotes = [];
+
+  function pushAndVoteGesture(rawGesture) {
+    recentGestureVotes.push(rawGesture);
+    if (recentGestureVotes.length > 5) recentGestureVotes.shift();
+
+    if (!rawGesture && recentGestureVotes.filter(g => g === null).length >= 4) {
+      return null;
+    }
+
+    const counts = {};
+    recentGestureVotes.forEach(g => {
+      if (g) counts[g] = (counts[g] || 0) + 1;
+    });
+
+    let voted = null;
+    let maxCount = 0;
+    for (const [g, count] of Object.entries(counts)) {
+      if (count > maxCount && count >= 3) {
+        maxCount = count;
+        voted = g;
+      }
+    }
+    return voted;
+  }
+
+  function initMediaPipe() {
+    if (mediaPipeHands || typeof window.Hands !== 'function') return;
+    try {
+      mediaPipeHands = new window.Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+      mediaPipeHands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 0,
+        minDetectionConfidence: 0.52,
+        minTrackingConfidence: 0.5
+      });
+      mediaPipeHands.onResults((results) => {
+        handleMediaPipeResults(results);
+      });
+      isMediaPipeReady = true;
+      console.log('🖐️ Google MediaPipe Hands AI Engine Ready & Online.');
+    } catch (e) {
+      console.warn('MediaPipe Hands setup note:', e);
+    }
+  }
+
+  function drawTargetGuideBox() {
+    if (!ctxOverlay || !canvasOverlay) return;
+    const w = canvasOverlay.width;
+    const h = canvasOverlay.height;
+    const rx = w * 0.15;
+    const ry = h * 0.12;
+    const rw = w * 0.70;
+    const rh = h * 0.76;
+
+    ctxOverlay.save();
+    ctxOverlay.strokeStyle = 'rgba(168, 85, 247, 0.45)';
+    ctxOverlay.lineWidth = 2;
+    ctxOverlay.setLineDash([6, 6]);
+    ctxOverlay.strokeRect(rx, ry, rw, rh);
+    ctxOverlay.setLineDash([]);
+    ctxOverlay.font = 'bold 11px monospace';
+    ctxOverlay.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctxOverlay.fillText('🖐️ TARGET HAND ZONE', rx + 10, ry + 20);
+    ctxOverlay.restore();
+  }
+
+  function handleMediaPipeResults(results) {
+    if (!ctxOverlay || !canvasOverlay) return;
+    ctxOverlay.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
+
+    if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+      const voted = pushAndVoteGesture(null);
+      SafetyPipeline.onGestureDetected(voted);
+      return;
+    }
+
+    const landmarks = results.multiHandLandmarks[0];
+    const w = canvasOverlay.width;
+    const h = canvasOverlay.height;
+
+    // Draw Skeleton Bones in Emerald Green
+    const connections = [
+      [0, 1], [1, 2], [2, 3], [3, 4],
+      [0, 5], [5, 6], [6, 7], [7, 8],
+      [5, 9], [9, 10], [10, 11], [11, 12],
+      [9, 13], [13, 14], [14, 15], [15, 16],
+      [13, 17], [17, 18], [18, 19], [19, 20],
+      [0, 17]
+    ];
+
+    ctxOverlay.save();
+    ctxOverlay.strokeStyle = '#10b981';
+    ctxOverlay.lineWidth = 3;
+    connections.forEach(([i, j]) => {
+      const p1 = landmarks[i];
+      const p2 = landmarks[j];
+      ctxOverlay.beginPath();
+      ctxOverlay.moveTo(p1.x * w, p1.y * h);
+      ctxOverlay.lineTo(p2.x * w, p2.y * h);
+      ctxOverlay.stroke();
+    });
+
+    // Draw Joint Dots
+    landmarks.forEach((p, idx) => {
+      const isTip = (idx === 4 || idx === 8 || idx === 12 || idx === 16 || idx === 20);
+      ctxOverlay.fillStyle = isTip ? '#ec4899' : '#10b981';
+      ctxOverlay.beginPath();
+      ctxOverlay.arc(p.x * w, p.y * h, isTip ? 6 : 4, 0, 2 * Math.PI);
+      ctxOverlay.fill();
+    });
+    ctxOverlay.restore();
+
+    // Finger Extension Checks relative to wrist & MCP joints
+    const wrist = landmarks[0];
+    function isFingerOpen(tipIdx, pipIdx, mcpIdx) {
+      const tip = landmarks[tipIdx];
+      const pip = landmarks[pipIdx];
+      const mcp = landmarks[mcpIdx];
+      const dTipWrist = Math.hypot(tip.x - wrist.x, tip.y - wrist.y);
+      const dPipWrist = Math.hypot(pip.x - wrist.x, pip.y - wrist.y);
+      const dTipMcp = Math.hypot(tip.x - mcp.x, tip.y - mcp.y);
+      const dPipMcp = Math.hypot(pip.x - mcp.x, pip.y - mcp.y);
+      const distCheck = dTipWrist > dPipWrist * 1.10 && dTipMcp > dPipMcp * 0.90;
+      const vertCheck = (tip.y < pip.y && tip.y < mcp.y);
+      return distCheck || vertCheck;
+    }
+
+    const indexOpen = isFingerOpen(8, 6, 5);
+    const middleOpen = isFingerOpen(12, 10, 9);
+    const ringOpen = isFingerOpen(16, 14, 13);
+    const pinkyOpen = isFingerOpen(20, 18, 17);
+
+    let rawDetected = null;
+    // 1. Palm (Trapped): 4 extended fingers or 3+ with open palm
+    if (indexOpen && middleOpen && ringOpen && pinkyOpen) {
+      rawDetected = 'PALM';
+    } else if (indexOpen && middleOpen && (ringOpen || pinkyOpen)) {
+      rawDetected = 'PALM';
+    }
+    // 2. V-Sign (Food): Index & Middle open, Ring & Pinky closed
+    else if (indexOpen && middleOpen && !ringOpen && !pinkyOpen) {
+      rawDetected = 'V_SIGN';
+    }
+    // 3. Pointing (Medicine): Index open, Middle, Ring & Pinky closed
+    else if (indexOpen && !middleOpen && !ringOpen && !pinkyOpen) {
+      rawDetected = 'POINTING';
+    }
+    // 4. Wrist / Fist (Emergency): All 4 fingers closed into palm/fist or showing wrist
+    else if (!indexOpen && !middleOpen && !ringOpen && !pinkyOpen) {
+      rawDetected = 'WRIST';
+    }
+
+    const voted = pushAndVoteGesture(rawDetected);
+    SafetyPipeline.onGestureDetected(voted, landmarks);
+  }
+
   const GestureCamera = {
     _onTrigger: null,
 
@@ -460,6 +625,9 @@
         const btnFlip = document.getElementById('btnFlipCamera');
         if (btnFlip) btnFlip.classList.remove('hidden');
 
+        // Initialize MediaPipe AI Landmark Tracker if available
+        initMediaPipe();
+
         this.processFrame();
 
       } catch (err) {
@@ -580,7 +748,19 @@
           canvasOverlay.height = videoEl.videoHeight || 480;
         }
 
-        this.detectHandFromCanvas();
+        // Try high-precision MediaPipe Hands first; fall back to Canvas ROI detector if unavailable
+        if (isMediaPipeReady && mediaPipeHands && !isMediaPipeProcessing) {
+          isMediaPipeProcessing = true;
+          mediaPipeHands.send({ image: videoEl })
+            .catch((e) => {
+              this.detectHandFromCanvas();
+            })
+            .finally(() => {
+              isMediaPipeProcessing = false;
+            });
+        } else if (!isMediaPipeReady) {
+          this.detectHandFromCanvas();
+        }
       }
 
       animationFrameId = requestAnimationFrame(() => this.processFrame());
@@ -595,51 +775,60 @@
       const imgData = offscreenCtx.getImageData(0, 0, sw, sh);
       const pixels = imgData.data;
 
+      // Restrict scanning to Central Target ROI (eliminates face & background contamination)
+      const roiMinX = Math.floor(sw * 0.15);
+      const roiMaxX = Math.floor(sw * 0.85);
+      const roiMinY = Math.floor(sh * 0.12);
+      const roiMaxY = Math.floor(sh * 0.90);
+
       let skinCount = 0;
       let sumX = 0;
       let sumY = 0;
       let minX = sw, maxX = 0, minY = sh, maxY = 0;
 
-      for (let i = 0; i < pixels.length; i += 4) {
-        const r = pixels[i];
-        const g = pixels[i + 1];
-        const b = pixels[i + 2];
-        const sum = r + g + b;
+      for (let y = roiMinY; y < roiMaxY; y++) {
+        for (let x = roiMinX; x < roiMaxX; x++) {
+          const i = (y * sw + x) * 4;
+          const r = pixels[i];
+          const g = pixels[i + 1];
+          const b = pixels[i + 2];
+          const sum = r + g + b;
 
-        if (sum >= 70 && sum <= 735) {
-          const rn = r / (sum + 0.001);
-          const gn = g / (sum + 0.001);
+          if (sum >= 70 && sum <= 735) {
+            const rn = r / (sum + 0.001);
+            const gn = g / (sum + 0.001);
 
-          const yLum = 0.299 * r + 0.587 * g + 0.114 * b;
-          const cr = (r - yLum) * 0.713 + 128;
-          const cb = (b - yLum) * 0.564 + 128;
+            const yLum = 0.299 * r + 0.587 * g + 0.114 * b;
+            const cr = (r - yLum) * 0.713 + 128;
+            const cb = (b - yLum) * 0.564 + 128;
 
-          const isChromSkin = (rn >= 0.33 && rn <= 0.64 && gn >= 0.23 && gn <= 0.40);
-          const isYCrCbSkin = (cr >= 126 && cr <= 182 && cb >= 70 && cb <= 142);
-          const isRgbSkin = (r > 70 && g > 35 && b > 20 && r > g && r > b && (Math.max(r, g, b) - Math.min(r, g, b) > 10));
+            const isChromSkin = (rn >= 0.33 && rn <= 0.64 && gn >= 0.23 && gn <= 0.40);
+            const isYCrCbSkin = (cr >= 126 && cr <= 182 && cb >= 70 && cb <= 142);
+            const isRgbSkin = (r > 70 && g > 35 && b > 20 && r > g && r > b && (Math.max(r, g, b) - Math.min(r, g, b) > 10));
 
-          if ((isChromSkin && isYCrCbSkin) || (isRgbSkin && (isChromSkin || isYCrCbSkin))) {
-            const px = (i / 4) % sw;
-            const py = Math.floor((i / 4) / sw);
-
-            skinCount++;
-            sumX += px;
-            sumY += py;
-            if (px < minX) minX = px;
-            if (px > maxX) maxX = px;
-            if (py < minY) minY = py;
-            if (py > maxY) maxY = py;
+            if ((isChromSkin && isYCrCbSkin) || (isRgbSkin && (isChromSkin || isYCrCbSkin))) {
+              skinCount++;
+              sumX += x;
+              sumY += y;
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
           }
         }
       }
 
-      const minPixels = sw * sh * 0.015;
-      const maxPixels = sw * sh * 0.55;
+      const minPixels = sw * sh * 0.02;
+      const maxPixels = sw * sh * 0.60;
 
       if (skinCount < minPixels || skinCount > maxPixels) {
-        SafetyPipeline.onGestureDetected(null);
+        const voted = pushAndVoteGesture(null);
+        SafetyPipeline.onGestureDetected(voted);
         if (ctxOverlay && canvasOverlay) {
           ctxOverlay.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
+          // Draw Guide Box
+          drawTargetGuideBox();
         }
         return;
       }
@@ -729,6 +918,7 @@
       // Draw overlay on canvas
       if (ctxOverlay && canvasOverlay) {
         ctxOverlay.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
+        drawTargetGuideBox();
         const scaleX = canvasOverlay.width / sw;
         const scaleY = canvasOverlay.height / sh;
 
@@ -758,7 +948,8 @@
         ctxOverlay.restore();
       }
 
-      SafetyPipeline.onGestureDetected(detected);
+      const voted = pushAndVoteGesture(detected);
+      SafetyPipeline.onGestureDetected(voted);
     },
 
     simulateGesture(gestureName) {

@@ -1,5 +1,5 @@
 // sw.js - Offline Service Worker Cache (Network-First with Instant Updates)
-const CACHE_NAME = 'silentbridge-v38';
+const CACHE_NAME = 'silentbridge-v39';
 const ASSETS = [
   './',
   './index.html',
@@ -16,7 +16,9 @@ const ASSETS = [
 const CDN_ASSETS = [
   'https://cdn.tailwindcss.com',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+  'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js',
+  'https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js'
 ];
 
 self.addEventListener('install', (e) => {
