@@ -415,21 +415,16 @@ document.addEventListener("DOMContentLoaded", () => {
         if (currentRole === 'sender' && markersLayer) {
           markersLayer.clearLayers();
           const selfMarker = L.marker([currentLat, currentLon]).addTo(markersLayer);
-          L.circle([currentLat, currentLon], {
-            color: '#10b981',
-            fillColor: '#10b981',
-            fillOpacity: 0.25,
-            radius: Math.max(10, currentAccuracy)
-          }).addTo(markersLayer);
           selfMarker.bindPopup(`
             <div class="font-mono text-xs">
               <b style="color:#059669;">📍 YOUR EXACT PHYSICAL LOCATION</b><br>
               LAT: ${currentLat.toFixed(6)}<br>
               LON: ${currentLon.toFixed(6)}<br>
               <span style="color:#059669; font-size:10px; font-weight:bold;">📍 EXACT PINPOINT (${label})</span>
+              ${currentExactAddress ? `<div style="margin-top:4px; font-size:10px; color:#1e1b4b; word-break:break-word;">🏠 ${currentExactAddress}</div>` : ''}
             </div>
           `);
-          map.setView([currentLat, currentLon], 16);
+          map.setView([currentLat, currentLon], 17);
         }
       } catch (mapPinErr) {
         console.warn("Self marker placement note:", mapPinErr);
@@ -470,58 +465,46 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   }
 
-  // MULTI-TIER REAL HARDWARE GPS & NETWORK GEOLOCATION RESOLVER
+  // EXACT HARDWARE SATELLITE & NETWORK GEOLOCATION RESOLVER
   async function getAccurateDeviceLocation(forceHighTimeout = false) {
     if (!navigator.geolocation) {
       console.warn("Hardware Geolocation API unavailable on this browser.");
-      const ipFix = await resolveIpLocationFallback();
-      if (ipFix) {
-        handleHighAccuracyGpsFix({ coords: { latitude: ipFix.lat, longitude: ipFix.lon, accuracy: ipFix.accuracy } }, "Network IP Location");
-        return ipFix;
-      }
       return getFallbackLocation();
     }
 
-    // Tier 1: High-Accuracy GPS (satellite / hardware)
+    // Tier 1: Exact High-Accuracy Hardware GPS (satellite / hardware)
     const tryHighAccuracy = () => new Promise((resolve) => {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          handleHighAccuracyGpsFix(pos, "Live GPS Satellite Lock");
+          handleHighAccuracyGpsFix(pos, "Exact Satellite Lock");
           resolve({ lat: currentLat, lon: currentLon, accuracy: currentAccuracy });
         },
         (err) => {
           console.warn("High-accuracy GPS attempt note:", err.message);
           resolve(null);
         },
-        { enableHighAccuracy: true, timeout: forceHighTimeout ? 10000 : 5000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: forceHighTimeout ? 15000 : 9000, maximumAge: 0 }
       );
     });
 
-    // Tier 2: Low-Accuracy GPS (Wi-Fi / OS location provider - very fast on laptops & indoors)
-    const tryLowAccuracy = () => new Promise((resolve) => {
+    // Tier 2: Exact Fast Device / OS Geolocation (Wi-Fi tri-lateration / cell)
+    const tryFastAccuracy = () => new Promise((resolve) => {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          handleHighAccuracyGpsFix(pos, "Device OS / Network Location");
+          handleHighAccuracyGpsFix(pos, "Exact Device Location");
           resolve({ lat: currentLat, lon: currentLon, accuracy: currentAccuracy });
         },
         (err) => {
-          console.warn("Low-accuracy GPS attempt note:", err.message);
+          console.warn("Device OS location note:", err.message);
           resolve(null);
         },
-        { enableHighAccuracy: false, timeout: 5000, maximumAge: 30000 }
+        { enableHighAccuracy: false, timeout: 6000, maximumAge: 10000 }
       );
     });
 
     let fix = await tryHighAccuracy();
     if (!fix) {
-      fix = await tryLowAccuracy();
-    }
-    if (!fix) {
-      const ipFix = await resolveIpLocationFallback();
-      if (ipFix) {
-        handleHighAccuracyGpsFix({ coords: { latitude: ipFix.lat, longitude: ipFix.lon, accuracy: ipFix.accuracy } }, "Network IP Location");
-        fix = ipFix;
-      }
+      fix = await tryFastAccuracy();
     }
 
     if (fix && fix.lat && fix.lon) {
@@ -596,7 +579,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (txtManualLat) txtManualLat.value = Number(fix.lat).toFixed(6);
           if (txtManualLon) txtManualLon.value = Number(fix.lon).toFixed(6);
           if (locationModalStatus) {
-            locationModalStatus.innerText = `✓ Satellite lock acquired: ±${fix.accuracy}m`;
+            locationModalStatus.innerText = `✓ Exact satellite lock acquired: ${Number(fix.lat).toFixed(6)}, ${Number(fix.lon).toFixed(6)}`;
             locationModalStatus.className = "text-[10px] text-emerald-300 mb-3";
           }
         }
@@ -2326,12 +2309,6 @@ document.addEventListener("DOMContentLoaded", () => {
         map.setView([tLat, tLon], 18);
         markersLayer.clearLayers();
         const ackMarker = L.marker([tLat, tLon]).addTo(markersLayer);
-        L.circle([tLat, tLon], {
-          color: '#10b981',
-          fillColor: '#10b981',
-          fillOpacity: 0.3,
-          radius: tAcc
-        }).addTo(markersLayer);
         const mapsPinUrl = `https://www.google.com/maps?q=${tLat.toFixed(6)},${tLon.toFixed(6)}`;
         const routeUrl = (rescuerDeviceLat && rescuerDeviceLon)
           ? `https://www.google.com/maps/dir/?api=1&origin=${rescuerDeviceLat},${rescuerDeviceLon}&destination=${tLat},${tLon}&travelmode=driving`
@@ -2352,7 +2329,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div style="font-size:13px; font-weight:900; color:#064e3b;">LAT: ${tLat.toFixed(6)}</div>
                 <div style="font-size:13px; font-weight:900; color:#064e3b;">LON: ${tLon.toFixed(6)}</div>
                 <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; color:#047857; margin-top:5px; padding-top:4px; border-top:1px solid #bbf7d0;">
-                  <span>Accuracy: ±${tAcc}m</span>
+                  <span style="color:#059669; font-weight:bold;">📍 EXACT LOCATION PIN</span>
                   <span style="text-decoration:underline;">Open in Maps ↗</span>
                 </div>
               </div>
@@ -2443,7 +2420,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const targetLat = (packet.lat != null) ? Number(packet.lat) : (currentLat || null);
           const targetLon = (packet.lon != null) ? Number(packet.lon) : (currentLon || null);
           if (ackCoordsEl && targetLat && targetLon) {
-            ackCoordsEl.innerText = `📍 EXACT ACKNOWLEDGED GPS: ${Number(targetLat).toFixed(6)}, ${Number(targetLon).toFixed(6)} (±${Math.round(currentAccuracy || 10)}m)`;
+            ackCoordsEl.innerText = `📍 EXACT ACKNOWLEDGED GPS: ${Number(targetLat).toFixed(6)}, ${Number(targetLon).toFixed(6)}`;
             ackCoordsEl.classList.remove("hidden");
           }
           const btnAckOpenRoute = document.getElementById("btnAckOpenRoute");
@@ -2611,8 +2588,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (hasNewGps && typeof L !== 'undefined' && map && markersLayer) {
           const vLat = Number(packet.lat);
           const vLon = Number(packet.lon);
-          const vAcc = Math.round(Number(packet.accuracy) || 10);
-          L.circle([vLat, vLon], { color: '#10b981', fillColor: '#10b981', fillOpacity: 0.2, radius: vAcc }).addTo(markersLayer);
+          markersLayer.clearLayers();
+          L.marker([vLat, vLon]).addTo(markersLayer);
           map.panTo([vLat, vLon]);
         }
       }
@@ -2756,12 +2733,6 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         markersLayer.clearLayers(); // Clear old markers to show ONLY the current survivor
         const marker = L.marker([validLat, validLon]).addTo(markersLayer);
-        L.circle([validLat, validLon], {
-          color: '#10b981',
-          fillColor: '#10b981',
-          fillOpacity: 0.25,
-          radius: validAcc
-        }).addTo(markersLayer);
 
         const mapsPinUrl = `https://www.google.com/maps?q=${validLat.toFixed(6)},${validLon.toFixed(6)}`;
 

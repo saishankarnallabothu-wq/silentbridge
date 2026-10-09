@@ -9,12 +9,14 @@
   // 🛡️ SafetyPipeline State Machine
   // ==========================================
   const SafetyPipeline = {
-    // Gesture Hold Configuration & State (1.5s smooth hold with 350ms noise debounce)
+    // Gesture Hold Configuration & State (1.5s smooth hold with 450ms noise grace & 320ms switch debounce)
     gesture: {
       active: false,
       cameraStream: null,
       handsDetector: null,
       currentDetectedGesture: null,
+      pendingSwitchGesture: null,
+      pendingSwitchStartTime: null,
       holdStartTime: null,
       holdDurationMs: 1500, // 1.5-second hold confirmation
       isHolding: false,
@@ -35,14 +37,14 @@
 
     onGestureDetected(gestureName, rawLandmarks = null) {
       if (!gestureName) {
-        // If hand detection dropped for a frame, wait for grace period before resetting hold
+        // If hand detection dropped for a frame, wait 450ms before resetting hold
         if (this.gesture.isHolding && !this.gesture.graceTimeoutId) {
           this.gesture.graceTimeoutId = setTimeout(() => {
             this.resetGestureHold();
             this.updateGestureBadge(null);
             this.updatePillHighlights(null);
             this.gesture.graceTimeoutId = null;
-          }, 350);
+          }, 450);
         }
         return;
       }
@@ -53,15 +55,44 @@
         this.gesture.graceTimeoutId = null;
       }
 
-      // If new gesture started
-      if (this.gesture.currentDetectedGesture !== gestureName) {
-        this.resetGestureHold();
+      // If nothing was holding yet, start hold immediately
+      if (!this.gesture.isHolding || !this.gesture.currentDetectedGesture) {
         this.gesture.currentDetectedGesture = gestureName;
         this.gesture.holdStartTime = Date.now();
         this.gesture.isHolding = true;
+        this.gesture.pendingSwitchGesture = null;
+        this.gesture.pendingSwitchStartTime = null;
         this.updateGestureBadge(gestureName);
         this.updatePillHighlights(gestureName);
         this.startHoldCountdown(gestureName);
+        return;
+      }
+
+      // If the same gesture continues holding, clear any pending switch
+      if (this.gesture.currentDetectedGesture === gestureName) {
+        this.gesture.pendingSwitchGesture = null;
+        this.gesture.pendingSwitchStartTime = null;
+        return;
+      }
+
+      // If a DIFFERENT gesture is detected while holding:
+      // Debounce the switch so a 1-frame twitch doesn't reset progress!
+      if (this.gesture.pendingSwitchGesture !== gestureName) {
+        this.gesture.pendingSwitchGesture = gestureName;
+        this.gesture.pendingSwitchStartTime = Date.now();
+      } else {
+        // Different gesture has been held consistently for >= 320ms -> switch to it
+        if (Date.now() - this.gesture.pendingSwitchStartTime >= 320) {
+          this.resetGestureHold();
+          this.gesture.currentDetectedGesture = gestureName;
+          this.gesture.holdStartTime = Date.now();
+          this.gesture.isHolding = true;
+          this.gesture.pendingSwitchGesture = null;
+          this.gesture.pendingSwitchStartTime = null;
+          this.updateGestureBadge(gestureName);
+          this.updatePillHighlights(gestureName);
+          this.startHoldCountdown(gestureName);
+        }
       }
     },
 
@@ -183,6 +214,8 @@
       this.gesture.isHolding = false;
       this.gesture.holdStartTime = null;
       this.gesture.currentDetectedGesture = null;
+      this.gesture.pendingSwitchGesture = null;
+      this.gesture.pendingSwitchStartTime = null;
 
       if (this.gesture.holdAnimFrameRef) {
         cancelAnimationFrame(this.gesture.holdAnimFrameRef);
@@ -294,12 +327,17 @@
   let isMediaPipeReady = false;
   let isMediaPipeProcessing = false;
   let recentGestureVotes = [];
+  let mediaPipeInitTimer = null;
 
   function pushAndVoteGesture(rawGesture) {
     recentGestureVotes.push(rawGesture);
     if (recentGestureVotes.length > 5) recentGestureVotes.shift();
 
-    if (!rawGesture && recentGestureVotes.filter(g => g === null).length >= 4) {
+    if (!rawGesture) {
+      const nonNull = recentGestureVotes.filter(Boolean);
+      if (nonNull.length >= 2) {
+        return nonNull[nonNull.length - 1];
+      }
       return null;
     }
 
@@ -311,7 +349,7 @@
     let voted = null;
     let maxCount = 0;
     for (const [g, count] of Object.entries(counts)) {
-      if (count > maxCount && count >= 3) {
+      if (count > maxCount) {
         maxCount = count;
         voted = g;
       }
@@ -320,22 +358,34 @@
   }
 
   function initMediaPipe() {
-    if (mediaPipeHands || typeof window.Hands !== 'function') return;
+    if (mediaPipeHands) return;
+    if (typeof window.Hands !== 'function') {
+      if (!mediaPipeInitTimer) {
+        mediaPipeInitTimer = setInterval(() => {
+          if (typeof window.Hands === 'function') {
+            clearInterval(mediaPipeInitTimer);
+            mediaPipeInitTimer = null;
+            initMediaPipe();
+          }
+        }, 200);
+      }
+      return;
+    }
     try {
       mediaPipeHands = new window.Hands({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
       });
       mediaPipeHands.setOptions({
         maxNumHands: 1,
-        modelComplexity: 0,
-        minDetectionConfidence: 0.52,
+        modelComplexity: 1, // Full precision model for ultra-accurate landmarks
+        minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
       });
       mediaPipeHands.onResults((results) => {
         handleMediaPipeResults(results);
       });
       isMediaPipeReady = true;
-      console.log('🖐️ Google MediaPipe Hands AI Engine Ready & Online.');
+      console.log('🖐️ Google MediaPipe Hands AI Engine Ready (Full Precision Mode).');
     } catch (e) {
       console.warn('MediaPipe Hands setup note:', e);
     }
@@ -410,41 +460,56 @@
 
     // Finger Extension Checks relative to wrist & MCP joints
     const wrist = landmarks[0];
-    function isFingerOpen(tipIdx, pipIdx, mcpIdx) {
+    function isFingerOpen(tipIdx, dipIdx, pipIdx, mcpIdx) {
       const tip = landmarks[tipIdx];
+      const dip = landmarks[dipIdx];
       const pip = landmarks[pipIdx];
       const mcp = landmarks[mcpIdx];
+
       const dTipWrist = Math.hypot(tip.x - wrist.x, tip.y - wrist.y);
       const dPipWrist = Math.hypot(pip.x - wrist.x, pip.y - wrist.y);
       const dTipMcp = Math.hypot(tip.x - mcp.x, tip.y - mcp.y);
       const dPipMcp = Math.hypot(pip.x - mcp.x, pip.y - mcp.y);
-      const distCheck = dTipWrist > dPipWrist * 1.10 && dTipMcp > dPipMcp * 0.90;
-      const vertCheck = (tip.y < pip.y && tip.y < mcp.y);
-      return distCheck || vertCheck;
+
+      const ratioWrist = dTipWrist / Math.max(0.001, dPipWrist);
+      const ratioMcp = dTipMcp / Math.max(0.001, dPipMcp);
+
+      // If finger is clearly curled back towards palm/wrist
+      if (ratioWrist < 1.05 || ratioMcp < 1.0) {
+        return false;
+      }
+
+      // If finger is clearly extended away from knuckles
+      if (ratioWrist > 1.15 && ratioMcp > 1.10) {
+        return true;
+      }
+
+      // Borderline cases: check vertical elevation relative to knuckle
+      return (tip.y < pip.y && tip.y < mcp.y);
     }
 
-    const indexOpen = isFingerOpen(8, 6, 5);
-    const middleOpen = isFingerOpen(12, 10, 9);
-    const ringOpen = isFingerOpen(16, 14, 13);
-    const pinkyOpen = isFingerOpen(20, 18, 17);
+    const indexOpen = isFingerOpen(8, 7, 6, 5);
+    const middleOpen = isFingerOpen(12, 11, 10, 9);
+    const ringOpen = isFingerOpen(16, 15, 14, 13);
+    const pinkyOpen = isFingerOpen(20, 19, 18, 17);
 
+    const openCount = [indexOpen, middleOpen, ringOpen, pinkyOpen].filter(Boolean).length;
     let rawDetected = null;
-    // 1. Palm (Trapped): 4 extended fingers or 3+ with open palm
-    if (indexOpen && middleOpen && ringOpen && pinkyOpen) {
-      rawDetected = 'PALM';
-    } else if (indexOpen && middleOpen && (ringOpen || pinkyOpen)) {
+
+    // 1. Palm (Trapped): 3 or 4 fingers extended (open hand)
+    if (openCount >= 3) {
       rawDetected = 'PALM';
     }
-    // 2. V-Sign (Food): Index & Middle open, Ring & Pinky closed
+    // 2. V-Sign (Food): Index & Middle extended, Ring & Pinky closed
     else if (indexOpen && middleOpen && !ringOpen && !pinkyOpen) {
       rawDetected = 'V_SIGN';
     }
-    // 3. Pointing (Medicine): Index open, Middle, Ring & Pinky closed
+    // 3. Pointing (Medicine): Index extended, Middle, Ring & Pinky closed
     else if (indexOpen && !middleOpen && !ringOpen && !pinkyOpen) {
       rawDetected = 'POINTING';
     }
-    // 4. Wrist / Fist (Emergency): All 4 fingers closed into palm/fist or showing wrist
-    else if (!indexOpen && !middleOpen && !ringOpen && !pinkyOpen) {
+    // 4. Wrist / Fist (Emergency): 0 fingers extended (all closed into fist or showing wrist)
+    else if (openCount === 0) {
       rawDetected = 'WRIST';
     }
 
