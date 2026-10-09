@@ -2153,6 +2153,53 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.className = "ack-btn flex-1 bg-emerald-600 text-white font-bold py-1.5 px-3 rounded-lg cursor-not-allowed text-xs";
       });
     }
+
+    // 4. Update Tactical Map to exact location where the sender is located and the ACK was transmitted
+    if (typeof L !== 'undefined' && map && markersLayer && target && !isNaN(Number(target.lat)) && !isNaN(Number(target.lon))) {
+      try {
+        const tLat = Number(target.lat);
+        const tLon = Number(target.lon);
+        const tAcc = Math.round(Number(target.accuracy) || 10);
+        map.setView([tLat, tLon], 18);
+        markersLayer.clearLayers();
+        const ackMarker = L.marker([tLat, tLon]).addTo(markersLayer);
+        L.circle([tLat, tLon], {
+          color: '#10b981',
+          fillColor: '#10b981',
+          fillOpacity: 0.3,
+          radius: tAcc
+        }).addTo(markersLayer);
+        const mapsPinUrl = `https://www.google.com/maps?q=${tLat.toFixed(6)},${tLon.toFixed(6)}`;
+        ackMarker.bindPopup(`
+          <div class="font-mono text-xs text-slate-900" style="min-width: 220px; padding: 4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <b style="color:#059669;">✓ ACK TRANSMITTED</b>
+              <span style="font-size:10px; background:#dcfce7; color:#166534; padding:2px 8px; border-radius:12px; font-weight:bold;">${ackTime}</span>
+            </div>
+            <div style="font-size:11px; margin-bottom:6px; color:#334155;"><b>Target Survivor:</b> ${target.name || 'Survivor'} (${labelId})</div>
+            <a href="${mapsPinUrl}" target="_blank" rel="noopener noreferrer" style="display:block; text-decoration:none; color:inherit; margin:6px 0;" title="Open exact coordinates in Google Maps">
+              <div style="background:#ecfdf5; color:#064e3b; padding:10px 12px; border-radius:14px; border:2px solid #10b981; font-family:monospace; cursor:pointer;">
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; color:#059669; font-weight:900; margin-bottom:4px;">
+                  <span>📍 EXACT LOCATION WHERE ACK TRANSMITTED</span>
+                  <span style="color:#2563eb; text-decoration:underline;">Maps ↗</span>
+                </div>
+                <div style="font-size:13px; font-weight:900; color:#064e3b;">LAT: ${tLat.toFixed(6)}</div>
+                <div style="font-size:13px; font-weight:900; color:#064e3b;">LON: ${tLon.toFixed(6)}</div>
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; color:#047857; margin-top:5px; padding-top:4px; border-top:1px solid #bbf7d0;">
+                  <span>Accuracy: ±${tAcc}m</span>
+                  <span style="text-decoration:underline;">Open in Maps ↗</span>
+                </div>
+              </div>
+            </a>
+            <div style="margin-top: 8px; width: 100%; background: #059669; color: white; font-weight: 900; padding: 8px 10px; border-radius: 10px; text-align: center; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;">
+              🛡️ RESCUE ACK ACTIVE & TRANSMITTED
+            </div>
+          </div>
+        `).openPopup();
+      } catch (mapAckErr) {
+        console.warn("Map update on ACK dispatch note:", mapAckErr);
+      }
+    }
   }
 
   // Wire ACK Dispatch Buttons
@@ -2220,6 +2267,11 @@ document.addEventListener("DOMContentLoaded", () => {
           stopBeaconRetryLoop();
           document.getElementById("ackTime").innerText = currentTime;
           document.getElementById("ackTitle").innerText = `BASE STATION ACKNOWLEDGED DISTRESS BEACON #${packet.msgId || myLastSentMsgId || 'CONFIRMED'}! HELP IS EN ROUTE.`;
+          const ackCoordsEl = document.getElementById("ackCoordsBadge");
+          if (ackCoordsEl && currentLat && currentLon) {
+            ackCoordsEl.innerText = `📍 EXACT ACKNOWLEDGED GPS: ${Number(currentLat).toFixed(6)}, ${Number(currentLon).toFixed(6)} (±${Math.round(currentAccuracy || 10)}m)`;
+            ackCoordsEl.classList.remove("hidden");
+          }
           ackBanner.classList.remove("hidden");
 
           applySenderGreenPositiveState(packet.msgId || myLastSentMsgId, currentTime);
@@ -2384,8 +2436,13 @@ document.addEventListener("DOMContentLoaded", () => {
     latestDetectedSosPacket = packet;
     playEmergencyAlertSound();
 
-    const typeNames = { 1: "Medical", 2: "Trapped", 3: "Fire", 4: "Flood" };
-    const typeName = packet.isPanic ? "CRITICAL PANIC" : (typeNames[packet.type] || "Distress");
+    const typeNames = { 1: "Medical Emergency", 2: "Trapped Disaster", 3: "Fire Disaster", 4: "Flood / Evacuation" };
+    let typeName = typeNames[packet.type] || "Distress";
+    if (packet.text && packet.text.includes("DISASTER SIGNAL")) {
+      typeName = packet.text;
+    } else if (packet.isPanic) {
+      typeName = `CRITICAL PANIC (${typeNames[packet.type] || "Disaster"})`;
+    }
 
     const validLat = (packet.lat != null && !isNaN(packet.lat) && Number(packet.lat) !== 0) ? Number(packet.lat) : (currentLat || DEFAULT_CAMPUS_LAT);
     const validLon = (packet.lon != null && !isNaN(packet.lon) && Number(packet.lon) !== 0) ? Number(packet.lon) : (currentLon || DEFAULT_CAMPUS_LON);
@@ -2530,17 +2587,13 @@ document.addEventListener("DOMContentLoaded", () => {
             </a>
 
             ${packet.voiceAudio ? '<div style="color:#7c3aed; font-weight:bold; margin-top:6px; font-size:11px;">🎙️ Situational Voice Memo Attached</div>' : ''}
-            <button id="btnMapPopupAck_${packet.msgId}" style="margin-top: 8px; width: 100%; background: #9333ea; color: white; font-weight: 900; padding: 8px 12px; border-radius: 10px; border: none; cursor: pointer; text-transform: uppercase; box-shadow: 0 4px 12px rgba(147,51,234,0.25);">
-              🛡️ SEND RESCUE ACK ➔
-            </button>
+            <div style="margin-top: 8px; width: 100%; background: #10b981; color: white; font-weight: 900; padding: 8px 10px; border-radius: 10px; text-align: center; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; box-shadow: 0 2px 8px rgba(16,185,129,0.25);">
+              📍 EXACT SURVIVOR LOCATION PINNED
+            </div>
           </div>
         `).openPopup();
 
         marker.on('popupopen', () => {
-          const popupAckBtn = document.getElementById(`btnMapPopupAck_${packet.msgId}`);
-          if (popupAckBtn) {
-            popupAckBtn.onclick = () => dispatchRescueAck(packet, popupAckBtn);
-          }
           const popupMapsLink = document.getElementById(`btnMapPopupGoogleMaps_${packet.msgId}`);
           if (popupMapsLink) {
             popupMapsLink.onclick = (e) => {

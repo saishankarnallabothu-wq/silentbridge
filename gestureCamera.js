@@ -1,22 +1,22 @@
 // gestureCamera.js - Hands-Free Emergency Gesture SOS Camera (SilentBridge)
-// 100% Offline Pure-JS Canvas Computer Vision with SafetyPipeline 1.2s hold & 350ms debounce.
-// Automatically dispatches emergency alert and live GPS to Rescuer upon holding any hand sign.
+// 100% Offline Pure-JS Canvas Computer Vision with SafetyPipeline 1.5s hold & 350ms debounce.
+// Automatically dispatches disaster signal alerts and live GPS to Rescuer upon holding any hand/wrist sign for 1.5s.
 
 (function (window) {
   'use strict';
 
-  // =========================================================================
+  // ==========================================
   // 🛡️ SafetyPipeline State Machine
-  // =========================================================================
+  // ==========================================
   const SafetyPipeline = {
-    // Gesture Hold Configuration & State (1.2s smooth hold with 350ms noise debounce)
+    // Gesture Hold Configuration & State (1.5s smooth hold with 350ms noise debounce)
     gesture: {
       active: false,
       cameraStream: null,
       handsDetector: null,
       currentDetectedGesture: null,
       holdStartTime: null,
-      holdDurationMs: 1200,
+      holdDurationMs: 1500, // 1.5-second hold confirmation
       isHolding: false,
       holdAnimFrameRef: null,
       graceTimeoutId: null
@@ -77,10 +77,11 @@
       }
 
       const gestureTitles = {
-        FIST: '✊ CLOSED FIST (PANIC SOS)',
-        POINTING: '☝️ POINTING (MEDICAL SOS)',
-        V_SIGN: '✌️ V-SIGN (EVAC / RESCUE SOS)',
-        PALM: '✋ OPEN PALM (DISTRESS SOS)'
+        FIST: '✊ WRIST / CLOSED FIST (TRAPPED DISASTER)',
+        WRIST: '✊ WRIST / FIST SIGN (TRAPPED DISASTER)',
+        POINTING: '☝️ POINTING INDEX (MEDICAL DISASTER)',
+        V_SIGN: '✌️ V-SIGN (FLOOD / EVACUATION)',
+        PALM: '✋ OPEN PALM (FIRE / DISTRESS)'
       };
 
       if (label) label.textContent = `CONFIRMING ${gestureTitles[gestureName] || gestureName}...`;
@@ -110,28 +111,38 @@
           circleSec.textContent = `${remaining}s`;
         }
         if (circleEmoji) {
-          const emojis = { FIST: '✊', POINTING: '☝️', V_SIGN: '✌️', PALM: '✋' };
+          const emojis = { FIST: '✊', WRIST: '✊', POINTING: '☝️', V_SIGN: '✌️', PALM: '✋' };
           circleEmoji.textContent = emojis[gestureName] || '🖐️';
         }
 
         if (elapsed >= this.gesture.holdDurationMs) {
-          // Gesture Hold Complete! Transmit SOS immediately across all channels!
-          console.log(`[Safety Pipeline] Gesture Hold Complete! Instant Dispatching: ${gestureName}`);
+          // Gesture Hold 1.5s Complete! Transmit disaster signal immediately across all channels!
+          console.log(`[Safety Pipeline] 1.5s Gesture Hold Complete! Instant Dispatching: ${gestureName}`);
 
-          const distressType = gestureName === 'FIST' ? 2 : (gestureName === 'POINTING' ? 1 : (gestureName === 'V_SIGN' ? 4 : 2));
-          const defaultMsgs = {
-            FIST: 'CAMERA GESTURE SOS: CLOSED FIST (TRAPPED)',
-            POINTING: 'CAMERA GESTURE SOS: POINTING (MEDICAL)',
-            V_SIGN: 'CAMERA GESTURE SOS: V-SIGN (EVAC / SHELTER)',
-            PALM: 'CAMERA GESTURE SOS: OPEN PALM (DISTRESS)'
+          const distressTypes = {
+            FIST: 2, // Trapped
+            WRIST: 2, // Trapped
+            POINTING: 1, // Medical
+            V_SIGN: 4, // Flood
+            PALM: 3 // Fire
           };
+          const defaultMsgs = {
+            FIST: 'DISASTER SIGNAL: TRAPPED (WRIST/FIST SIGN)',
+            WRIST: 'DISASTER SIGNAL: TRAPPED (WRIST SIGN)',
+            POINTING: 'DISASTER SIGNAL: MEDICAL EMERGENCY (POINTING)',
+            V_SIGN: 'DISASTER SIGNAL: FLOOD / EVACUATION (V-SIGN)',
+            PALM: 'DISASTER SIGNAL: FIRE / RESCUE DISTRESS (PALM)'
+          };
+
+          const distressType = distressTypes[gestureName] || 2;
+          const alertMessage = defaultMsgs[gestureName] || 'DISASTER ALERT SIGNAL';
 
           this.resetGestureHold();
 
           // Flash visual feedback on badge
           const badge = document.getElementById('gestureDetectedBadge');
           if (badge) {
-            badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span><span class="text-emerald-300 font-bold">🚨 GESTURE SOS DISPATCHED TO RESCUE HQ!</span>`;
+            badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span><span class="text-emerald-300 font-bold">🚨 1.5s GESTURE DISASTER SIGNAL SENT TO RESCUER!</span>`;
             badge.className = 'text-[11px] font-mono px-3 py-1 rounded-lg bg-emerald-950/90 text-emerald-200 border border-emerald-400 backdrop-blur-sm font-bold flex items-center gap-1.5 shadow-lg';
           }
 
@@ -148,13 +159,13 @@
             try { window.modem.playAlarmChime(); } catch (e) {}
           }
 
-          // Dispatch across mesh and acoustic channels
+          // Dispatch across mesh and acoustic channels to Rescuer
           if (typeof window.executePanicSosDispatch === 'function') {
             window.executePanicSosDispatch({
               source: 'gesture',
               gestureName: gestureName,
               distressType: distressType,
-              message: defaultMsgs[gestureName] || 'CAMERA GESTURE SOS'
+              message: alertMessage
             });
           } else if (typeof GestureCamera._onTrigger === 'function') {
             GestureCamera._onTrigger(gestureName.toLowerCase());
@@ -206,28 +217,28 @@
           <span>Waiting for Hand Sign...</span>
         `;
         badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-black/70 text-slate-300 border border-white/20 backdrop-blur-sm font-bold flex items-center gap-1.5';
-      } else if (gestureName === 'FIST') {
+      } else if (gestureName === 'FIST' || gestureName === 'WRIST') {
         badge.innerHTML = `
           <span class="w-2 h-2 rounded-full bg-red-400 animate-ping"></span>
-          <span class="text-rose-300">✊ CLOSED FIST DETECTED // HOLD 1.2s</span>
+          <span class="text-rose-300">✊ WRIST / FIST DETECTED // HOLD 1.5s</span>
         `;
         badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-red-950/80 text-rose-200 border border-red-500/50 backdrop-blur-sm font-bold flex items-center gap-1.5';
       } else if (gestureName === 'POINTING') {
         badge.innerHTML = `
           <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-          <span class="text-amber-300">☝️ POINTING INDEX DETECTED // HOLD 1.2s</span>
+          <span class="text-amber-300">☝️ POINTING INDEX DETECTED // HOLD 1.5s</span>
         `;
         badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-amber-950/80 text-amber-200 border border-amber-500/50 backdrop-blur-sm font-bold flex items-center gap-1.5';
       } else if (gestureName === 'V_SIGN') {
         badge.innerHTML = `
           <span class="w-2 h-2 rounded-full bg-blue-400 animate-ping"></span>
-          <span class="text-blue-300">✌️ V-SIGN DETECTED // HOLD 1.2s</span>
+          <span class="text-blue-300">✌️ V-SIGN DETECTED // HOLD 1.5s</span>
         `;
         badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-blue-950/80 text-blue-200 border border-blue-500/50 backdrop-blur-sm font-bold flex items-center gap-1.5';
       } else if (gestureName === 'PALM') {
         badge.innerHTML = `
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-          <span class="text-emerald-300">✋ OPEN PALM DETECTED // HOLD 1.2s</span>
+          <span class="text-emerald-300">✋ OPEN PALM DETECTED // HOLD 1.5s</span>
         `;
         badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-emerald-950/80 text-emerald-200 border border-emerald-500/50 backdrop-blur-sm font-bold flex items-center gap-1.5';
       }
@@ -255,7 +266,7 @@
       resetPill(pillV);
 
       if (gestureName === 'PALM') highlightPill(pillPalm);
-      else if (gestureName === 'FIST') highlightPill(pillFist);
+      else if (gestureName === 'FIST' || gestureName === 'WRIST') highlightPill(pillFist);
       else if (gestureName === 'POINTING') highlightPill(pillPoint);
       else if (gestureName === 'V_SIGN') highlightPill(pillV);
     }
@@ -505,7 +516,11 @@
     },
 
     toggle() {
-      if (isRunning || isOpening) {
+      if (isOpening) {
+        console.log('Camera initialization already in progress, ignoring duplicate toggle.');
+        return;
+      }
+      if (isRunning) {
         this.stop();
       } else {
         this.start();
@@ -701,7 +716,10 @@
       } else if (numPeaks === 1) {
         detected = 'POINTING';
       } else if (numPeaks === 0) {
-        if (aspectRatio >= 0.55 && aspectRatio <= 1.5) {
+        // Hand signs with 0 prominent peaks: Wrist or Fist sign
+        if (aspectRatio <= 0.85) {
+          detected = 'WRIST';
+        } else if (aspectRatio <= 1.6) {
           detected = 'FIST';
         } else {
           detected = 'PALM';
@@ -782,7 +800,7 @@
         if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse';
         if (badge) {
           badge.className = 'text-[9px] bg-purple-200 text-purple-900 border border-purple-400 px-2 py-0.5 rounded-full font-black font-mono uppercase tracking-wider';
-          badge.innerText = 'HOLD 1.2s TRIGGER';
+          badge.innerText = 'HOLD 1.5s TRIGGER';
         }
         if (txt) txt.className = 'text-[10px] text-slate-500 mt-2 font-medium';
         if (btnToggle && !isRunning) {
