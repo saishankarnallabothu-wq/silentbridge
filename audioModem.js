@@ -80,7 +80,7 @@ class AudioModem {
       const width = canvas.width;
       const height = canvas.height;
 
-      ctx.fillStyle = '#0a0a0a';
+      ctx.fillStyle = '#faf7fe';
       ctx.fillRect(0, 0, width, height);
 
       let hasLiveAudio = false;
@@ -112,18 +112,18 @@ class AudioModem {
           const y = height - barHeight;
 
           if (this.isTransmitting) {
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = '#dc2626'; // Vibrant Red when transmitting
           } else if (this.currentRxState === 'RECEIVING') {
-            ctx.fillStyle = '#38bdf8'; // Cyan when decoding acoustic signal
+            ctx.fillStyle = '#2563eb'; // Blue when decoding acoustic signal
           } else {
-            ctx.fillStyle = val > 120 ? '#ffffff' : '#10b981'; // Green
+            ctx.fillStyle = val > 120 ? '#7c3aed' : '#a855f7'; // Purple spectrum
           }
 
           ctx.fillRect(x + 1, y, barWidth - 2, barHeight);
         }
       } else {
         // Idle Tactical Radar Waveform
-        ctx.strokeStyle = this.isListening ? '#10b981' : '#404040';
+        ctx.strokeStyle = this.isListening ? '#9333ea' : '#cbd5e1';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
 
@@ -137,7 +137,7 @@ class AudioModem {
         }
         ctx.stroke();
 
-        ctx.fillStyle = this.isListening ? '#10b981' : '#737373';
+        ctx.fillStyle = this.isListening ? '#7c3aed' : '#94a3b8';
         ctx.font = '9px monospace';
         let label = 'ACOUSTIC STANDBY';
         if (this.isTransmitting) label = 'TX TRANSMITTING ACOUSTIC FSK';

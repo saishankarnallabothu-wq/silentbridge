@@ -607,8 +607,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     selectedType = 1;
     document.querySelectorAll(".type-btn").forEach((btn, index) => {
-      btn.classList.remove("ring-2", "ring-white");
-      if (index === 0) btn.classList.add("ring-2", "ring-white");
+      btn.classList.remove("active", "ring-2", "ring-purple-600", "ring-white");
+      if (index === 0) btn.classList.add("active", "ring-2", "ring-purple-600");
     });
   }
 
@@ -619,15 +619,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!micDot || !micText) return;
 
     if (modem && modem.isListening) {
-      micDot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+      micDot.className = "w-2 h-2 rounded-full bg-emerald-500 animate-pulse";
       micText.innerText = "MIC: LISTENING AIRWAVES";
-      micText.className = "text-emerald-300";
-      if (btnToggleMic) btnToggleMic.className = "flex-shrink-0 flex items-center gap-1.5 bg-neutral-900 hover:bg-neutral-800 border border-emerald-400/60 px-2.5 py-1 rounded-md text-[10px] font-mono font-bold text-emerald-300 transition";
+      micText.className = "text-purple-900 font-bold";
+      if (btnToggleMic) btnToggleMic.className = "flex-shrink-0 flex items-center gap-1.5 bg-white hover:bg-purple-50 border border-purple-300 px-3 py-1.5 rounded-xl text-[10px] font-mono font-bold text-purple-900 shadow-sm transition";
     } else {
-      micDot.className = "w-2 h-2 rounded-full bg-neutral-500";
+      micDot.className = "w-2 h-2 rounded-full bg-slate-400";
       micText.innerText = "MIC: OFF (TAP TO ACTIVATE)";
-      micText.className = "text-neutral-400";
-      if (btnToggleMic) btnToggleMic.className = "flex-shrink-0 flex items-center gap-1.5 bg-neutral-900 hover:bg-neutral-800 border border-white/20 px-2.5 py-1 rounded-md text-[10px] font-mono font-bold text-neutral-400 transition";
+      micText.className = "text-slate-500 font-bold";
+      if (btnToggleMic) btnToggleMic.className = "flex-shrink-0 flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 px-3 py-1.5 rounded-xl text-[10px] font-mono font-bold text-slate-600 transition";
     }
   }
 
@@ -688,8 +688,8 @@ document.addEventListener("DOMContentLoaded", () => {
   function switchToSender() {
     currentRole = 'sender';
     if (meshBridge) meshBridge.setRole('sender');
-    btnRoleSender.className = "px-3.5 py-1.5 rounded-md font-bold transition bg-white text-black shadow-sm";
-    btnRoleReceiver.className = "px-3.5 py-1.5 rounded-md font-bold transition text-neutral-400 hover:text-white";
+    btnRoleSender.className = "px-4 py-1.5 rounded-xl font-black transition bg-purple-600 text-white shadow-md";
+    btnRoleReceiver.className = "px-4 py-1.5 rounded-xl font-bold transition text-purple-900/70 hover:text-purple-950";
     panelSender.classList.remove("hidden");
     panelReceiver.classList.add("hidden");
     sosBanner.classList.add("hidden");
@@ -702,8 +702,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (meshBridge) meshBridge.setRole('receiver');
     modem.startListening();
     updateMicStatusUi();
-    btnRoleSender.className = "px-3.5 py-1.5 rounded-md font-bold transition text-neutral-400 hover:text-white";
-    btnRoleReceiver.className = "px-3.5 py-1.5 rounded-md font-bold transition bg-white text-black shadow-sm";
+    btnRoleSender.className = "px-4 py-1.5 rounded-xl font-bold transition text-purple-900/70 hover:text-purple-950";
+    btnRoleReceiver.className = "px-4 py-1.5 rounded-xl font-black transition bg-purple-600 text-white shadow-md";
     panelSender.classList.add("hidden");
     panelReceiver.classList.remove("hidden");
     ackBanner.classList.add("hidden");
@@ -1321,9 +1321,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.querySelectorAll(".type-btn").forEach(btn => {
     btn.addEventListener("click", (e) => {
-      document.querySelectorAll(".type-btn").forEach(b => b.classList.remove("ring-2", "ring-white"));
+      document.querySelectorAll(".type-btn").forEach(b => b.classList.remove("active", "ring-2", "ring-purple-600", "ring-white"));
       const target = e.currentTarget;
-      target.classList.add("ring-2", "ring-white");
+      target.classList.add("active", "ring-2", "ring-purple-600");
       selectedType = parseInt(target.dataset.type);
     });
   });
@@ -1952,31 +1952,31 @@ document.addEventListener("DOMContentLoaded", () => {
         const mapsPinUrl = `https://www.google.com/maps?q=${validLat.toFixed(6)},${validLon.toFixed(6)}`;
 
         marker.bindPopup(`
-          <div class="font-mono text-xs text-black" style="min-width: 220px; padding: 2px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-              <b>${packet.isPanic ? '🚨 CRITICAL PANIC' : 'SOS Beacon'} #${packet.msgId}</b>
-              <span style="font-size:10px; background:#f3f4f6; padding:2px 6px; border-radius:4px; font-weight:bold;">${currentTime}</span>
+          <div class="font-mono text-xs text-slate-900" style="min-width: 220px; padding: 4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <b style="color:#0f172a;">${packet.isPanic ? '🚨 CRITICAL PANIC' : 'SOS Beacon'} #${packet.msgId}</b>
+              <span style="font-size:10px; background:#f3e8ff; color:#7c3aed; padding:2px 8px; border-radius:12px; font-weight:bold;">${currentTime}</span>
             </div>
-            <div style="font-size:11px; margin-bottom:6px;"><b>Survivor:</b> ${survivorName}</div>
+            <div style="font-size:11px; margin-bottom:6px; color:#334155;"><b>Survivor:</b> ${survivorName}</div>
             
             <!-- CLICKABLE EXACT COORDINATES -> OPENS GOOGLE MAPS DIRECTLY -->
             <a id="btnMapPopupGoogleMaps_${packet.msgId}" href="${mapsPinUrl}" target="_blank" rel="noopener noreferrer" style="display:block; text-decoration:none; color:inherit; margin:6px 0;" title="Click to open exact survivor location pin in Google Maps">
-              <div style="background:#0a0a0a; color:#10b981; padding:8px 10px; border-radius:8px; border:2px solid #10b981; font-family:monospace; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.3); transition:background 0.15s ease;">
-                <div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; color:#34d399; font-weight:900; text-transform:uppercase; margin-bottom:4px;">
+              <div style="background:#faf7fe; color:#1e1b4b; padding:10px 12px; border-radius:14px; border:2px solid #a855f7; font-family:monospace; cursor:pointer; box-shadow:0 4px 12px rgba(168,85,247,0.12); transition:all 0.15s ease;">
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; color:#7c3aed; font-weight:900; text-transform:uppercase; margin-bottom:4px;">
                   <span>📍 EXACT SURVIVOR PIN</span>
-                  <span style="color:#60a5fa; text-decoration:underline; font-family:sans-serif; font-size:10px; font-weight:bold;">Google Maps ↗</span>
+                  <span style="color:#2563eb; text-decoration:underline; font-family:sans-serif; font-size:11px; font-weight:bold;">Google Maps ↗</span>
                 </div>
-                <div style="font-size:12px; font-weight:900; color:#ffffff; letter-spacing:0.5px;">LAT: ${validLat.toFixed(6)}</div>
-                <div style="font-size:12px; font-weight:900; color:#ffffff; letter-spacing:0.5px;">LON: ${validLon.toFixed(6)}</div>
-                <div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; color:#a3a3a3; margin-top:5px; padding-top:4px; border-top:1px solid rgba(255,255,255,0.2);">
-                  <span style="color:#10b981; font-weight:bold;">Accuracy: ±${validAcc}m</span>
-                  <span style="color:#93c5fd; font-weight:bold; text-decoration:underline;">Open in Maps ↗</span>
+                <div style="font-size:13px; font-weight:900; color:#0f172a; letter-spacing:0.5px;">LAT: ${validLat.toFixed(6)}</div>
+                <div style="font-size:13px; font-weight:900; color:#0f172a; letter-spacing:0.5px;">LON: ${validLon.toFixed(6)}</div>
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; color:#64748b; margin-top:5px; padding-top:4px; border-top:1px solid #e9d5ff;">
+                  <span style="color:#059669; font-weight:bold;">Accuracy: ±${validAcc}m</span>
+                  <span style="color:#2563eb; font-weight:bold; text-decoration:underline;">Open in Maps ↗</span>
                 </div>
               </div>
             </a>
 
-            ${packet.voiceAudio ? '<div style="color:#059669; font-weight:bold; margin-top:4px; font-size:11px;">🎙️ Situational Voice Memo Attached</div>' : ''}
-            <button id="btnMapPopupAck_${packet.msgId}" style="margin-top: 8px; width: 100%; background: #10b981; color: black; font-weight: 900; padding: 7px 10px; border-radius: 6px; border: none; cursor: pointer; text-transform: uppercase;">
+            ${packet.voiceAudio ? '<div style="color:#7c3aed; font-weight:bold; margin-top:6px; font-size:11px;">🎙️ Situational Voice Memo Attached</div>' : ''}
+            <button id="btnMapPopupAck_${packet.msgId}" style="margin-top: 8px; width: 100%; background: #9333ea; color: white; font-weight: 900; padding: 8px 12px; border-radius: 10px; border: none; cursor: pointer; text-transform: uppercase; box-shadow: 0 4px 12px rgba(147,51,234,0.25);">
               🛡️ SEND RESCUE ACK ➔
             </button>
           </div>
@@ -2008,21 +2008,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const card = document.createElement("div");
     card.id = `incident-card-${packet.msgId}`;
     card.className = packet.isPanic 
-      ? "bg-neutral-900 border-2 border-red-500 p-3.5 rounded-lg shadow-xl text-xs flex flex-col gap-2"
-      : "bg-neutral-900 border-l-4 border-emerald-400 p-3.5 rounded-lg shadow-lg text-xs flex flex-col gap-2";
+      ? "bg-red-50/80 border-2 border-red-500 p-4 rounded-2xl shadow-xl text-xs flex flex-col gap-2.5 text-slate-900"
+      : "bg-white border-2 border-purple-400 p-4 rounded-2xl shadow-md text-xs flex flex-col gap-2.5 text-slate-900";
 
     let voicePlayerHtml = '';
     if (packet.voiceAudio) {
       voicePlayerHtml = `
-        <div class="voice-player-container bg-black p-2.5 rounded-lg border-2 border-emerald-400/80 flex flex-col gap-1.5 shadow-inner my-1">
+        <div class="voice-player-container bg-purple-50/80 p-2.5 rounded-xl border border-purple-300 flex flex-col gap-1.5 shadow-sm my-1">
           <div class="flex justify-between items-center">
-            <span class="text-[10px] text-emerald-300 font-bold font-mono flex items-center gap-1">
+            <span class="text-[10px] text-purple-900 font-bold font-mono flex items-center gap-1">
               <span>🎙️</span> ${survivorName.toUpperCase()}'S VOICE NOTE (${currentTime}):
             </span>
-            <span class="text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.5 rounded font-mono font-bold animate-pulse">AUDIO READY</span>
+            <span class="text-[9px] bg-purple-200 text-purple-900 border border-purple-400 px-1.5 py-0.5 rounded font-mono font-bold animate-pulse">AUDIO READY</span>
           </div>
           <div class="flex items-center gap-2">
-            <button type="button" class="btn-play-voice-${packet.msgId} bg-emerald-400 hover:bg-emerald-300 text-black font-black text-[11px] px-3 py-1 rounded flex items-center gap-1 shadow transition active:scale-95">
+            <button type="button" class="btn-play-voice-${packet.msgId} bg-purple-600 hover:bg-purple-700 text-white font-black text-[11px] px-3 py-1 rounded-lg flex items-center gap-1 shadow transition active:scale-95">
               ▶️ Play Voice
             </button>
             <audio id="feedVoiceAudio_${packet.msgId}" controls src="${packet.voiceAudio}" class="flex-1 h-7 rounded"></audio>
@@ -2031,52 +2031,52 @@ document.addEventListener("DOMContentLoaded", () => {
       `;
     } else if (packet.hasVoice) {
       voicePlayerHtml = `
-        <div class="voice-player-container bg-neutral-950 p-2 rounded border border-white/20 text-[10px] text-neutral-400 font-mono">
+        <div class="voice-player-container bg-purple-50/50 p-2 rounded-xl border border-purple-200 text-[10px] text-slate-600 font-mono">
           🎙️ Voice memo recorded by survivor (audio stripped over low-bandwidth link).
         </div>
       `;
     }
 
     card.innerHTML = `
-      <div class="flex justify-between items-center text-neutral-400 font-mono">
-        <span class="font-black text-white">#${packet.msgId} (${typeName})</span>
-        <span class="text-white">🕒 ${currentTime}</span>
+      <div class="flex justify-between items-center text-slate-500 font-mono">
+        <span class="font-black text-slate-900 text-xs">#${packet.msgId} (${typeName})</span>
+        <span class="text-slate-600 font-bold">🕒 ${currentTime}</span>
       </div>
-      <div class="text-xs font-bold text-white">👤 Survivor: ${survivorName}</div>
-      <p class="text-neutral-200 font-medium">${packet.text || "Emergency SOS"}</p>
+      <div class="text-xs font-bold text-slate-900">👤 Survivor: ${survivorName}</div>
+      <p class="text-slate-700 font-medium">${packet.text || "Emergency SOS"}</p>
       
       <!-- EXACT SURVIVOR LOCATION TELEMETRY -->
-      <div class="bg-black p-2.5 rounded-lg border-2 border-emerald-400 font-mono flex flex-col gap-1.5 shadow-inner my-1">
+      <div class="bg-purple-50/80 p-3 rounded-xl border border-purple-300 font-mono flex flex-col gap-1.5 shadow-sm my-1">
         <div class="flex justify-between items-center text-[10px]">
-          <span class="text-emerald-400 font-black uppercase tracking-wider flex items-center gap-1.5">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+          <span class="text-purple-800 font-black uppercase tracking-wider flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-purple-600 animate-ping"></span>
             EXACT SURVIVOR LOCATION
           </span>
-          <button type="button" class="copy-coords-btn-${packet.msgId} bg-neutral-800 hover:bg-neutral-700 text-emerald-300 font-mono font-bold py-1 px-2.5 rounded text-[10px] border border-emerald-500/50 transition active:scale-95 flex items-center gap-1" title="Copy exact GPS coordinates">
+          <button type="button" class="copy-coords-btn-${packet.msgId} bg-white hover:bg-purple-100 text-purple-700 font-mono font-bold py-1 px-2.5 rounded-lg text-[10px] border border-purple-300 transition active:scale-95 flex items-center gap-1 shadow-sm" title="Copy exact GPS coordinates">
             📋 Copy GPS
           </button>
         </div>
         <a href="https://www.google.com/maps?q=${validLat.toFixed(6)},${validLon.toFixed(6)}" target="_blank" rel="noopener noreferrer" class="block group cursor-pointer" title="Click to view exact survivor pin in Google Maps">
-          <div class="grid grid-cols-2 gap-2 text-white">
-            <div class="bg-neutral-950 group-hover:bg-neutral-900 p-2 rounded border border-white/10 group-hover:border-emerald-400 transition">
+          <div class="grid grid-cols-2 gap-2 text-slate-900">
+            <div class="bg-white group-hover:bg-purple-50 p-2 rounded-lg border border-purple-200 group-hover:border-purple-600 transition shadow-sm">
               <div class="flex justify-between items-center mb-0.5">
-                <span class="text-[9px] text-neutral-400 block font-bold uppercase">LATITUDE:</span>
-                <span class="text-[9px] text-blue-400 underline font-sans">Maps ↗</span>
+                <span class="text-[9px] text-slate-500 block font-bold uppercase">LATITUDE:</span>
+                <span class="text-[9px] text-blue-600 underline font-sans font-bold">Maps ↗</span>
               </div>
-              <span class="text-xs font-black text-emerald-300 tracking-wider">${validLat.toFixed(6)}</span>
+              <span class="text-xs font-black text-purple-950 tracking-wider">${validLat.toFixed(6)}</span>
             </div>
-            <div class="bg-neutral-950 group-hover:bg-neutral-900 p-2 rounded border border-white/10 group-hover:border-emerald-400 transition">
+            <div class="bg-white group-hover:bg-purple-50 p-2 rounded-lg border border-purple-200 group-hover:border-purple-600 transition shadow-sm">
               <div class="flex justify-between items-center mb-0.5">
-                <span class="text-[9px] text-neutral-400 block font-bold uppercase">LONGITUDE:</span>
-                <span class="text-[9px] text-blue-400 underline font-sans">Maps ↗</span>
+                <span class="text-[9px] text-slate-500 block font-bold uppercase">LONGITUDE:</span>
+                <span class="text-[9px] text-blue-600 underline font-sans font-bold">Maps ↗</span>
               </div>
-              <span class="text-xs font-black text-emerald-300 tracking-wider">${validLon.toFixed(6)}</span>
+              <span class="text-xs font-black text-purple-950 tracking-wider">${validLon.toFixed(6)}</span>
             </div>
           </div>
         </a>
-        <div class="flex justify-between items-center text-[10px] text-neutral-400 pt-0.5">
-          <span class="text-emerald-400 font-bold">Accuracy: ±${validAcc}m</span>
-          <a href="https://www.google.com/maps?q=${validLat.toFixed(6)},${validLon.toFixed(6)}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline font-mono text-[10px] font-bold">
+        <div class="flex justify-between items-center text-[10px] text-slate-600 pt-0.5">
+          <span class="text-emerald-700 font-bold">Accuracy: ±${validAcc}m</span>
+          <a href="https://www.google.com/maps?q=${validLat.toFixed(6)},${validLon.toFixed(6)}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-mono text-[10px] font-bold">
             Open in Google Maps ↗
           </a>
         </div>
@@ -2084,7 +2084,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       ${voicePlayerHtml}
       <div class="flex flex-wrap gap-2 mt-1">
-        <button class="ack-btn card-ack-btn-${packet.msgId} w-full bg-emerald-400 hover:bg-emerald-300 text-black font-black py-2.5 px-3 rounded-lg transition uppercase tracking-wider shadow active:scale-95 text-xs">
+        <button class="ack-btn card-ack-btn-${packet.msgId} w-full bg-purple-600 hover:bg-purple-700 text-white font-black py-2.5 px-3 rounded-xl transition uppercase tracking-wider shadow active:scale-95 text-xs">
           🛡️ SEND RESCUE ACK ➔
         </button>
       </div>
