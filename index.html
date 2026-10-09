@@ -447,8 +447,114 @@
           </p>
         </div>
 
+        <!-- HANDS-FREE GESTURE CAMERA SOS (HOLD 1.2S: ✊ FIST / ☝️ POINTING / ✌️ V-SIGN / ✋ PALM) -->
+        <div id="gestureCameraContainer" class="mb-4 p-4 bg-purple-50/70 border-2 border-purple-400 rounded-2xl shadow-sm transition-all">
+          <div class="flex items-center justify-between mb-2">
+            <span id="lblGestureTitle" class="text-[11px] font-black text-purple-900 tracking-wider flex items-center gap-1.5 font-mono">
+              <span id="gestureCameraDot" class="w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse"></span>
+              HANDS-FREE GESTURE SOS CAMERA
+            </span>
+            <div class="flex items-center gap-2">
+              <span id="badgeGestureHold" class="text-[9px] bg-purple-200 text-purple-900 border border-purple-400 px-2 py-0.5 rounded-full font-black font-mono uppercase tracking-wider">
+                HOLD 1.2s TRIGGER
+              </span>
+            </div>
+          </div>
 
-        <!-- SURVIVOR NAME INPUT -->
+          <!-- Supported Gestures Pills -->
+          <div class="grid grid-cols-4 gap-1.5 mb-2.5 text-center text-[10px] font-mono font-bold">
+            <button id="gesturePillPalm" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('palm')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test Palm sign">
+              <span class="text-sm">✋</span> Palm
+            </button>
+            <button id="gesturePillFist" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('fist')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test Fist sign">
+              <span class="text-sm">✊</span> Fist
+            </button>
+            <button id="gesturePillPoint" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('pointing')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test Pointing sign">
+              <span class="text-sm">☝️</span> Point
+            </button>
+            <button id="gesturePillV" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('v_sign')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test V-Sign">
+              <span class="text-sm">✌️</span> V-Sign
+            </button>
+          </div>
+
+          <!-- Camera Action Controls -->
+          <div class="flex items-center gap-2 mb-2">
+            <button id="btnToggleGestureCamera" type="button" onclick="window.GestureCamera && window.GestureCamera.toggle()" class="flex-1 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-black text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition cursor-pointer">
+              <span>📷</span> Open Gesture Camera
+            </button>
+            <button id="btnFlipCamera" type="button" onclick="window.GestureCamera && window.GestureCamera.flipCamera()" class="hidden bg-white hover:bg-purple-100 border border-purple-300 text-purple-900 text-xs font-bold py-2.5 px-3 rounded-xl transition cursor-pointer" title="Flip camera facing mode">
+              🔄 Flip
+            </button>
+          </div>
+
+          <!-- Video Viewport & Overlays -->
+          <div id="gestureVideoWrapper" class="hidden relative rounded-2xl overflow-hidden bg-slate-950 border-2 border-purple-500 shadow-md aspect-video sm:aspect-[4/3] max-h-60 flex items-center justify-center">
+            <video id="gestureVideo" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100"></video>
+            <canvas id="gestureCanvasOverlay" class="absolute inset-0 w-full h-full pointer-events-none transform -scale-x-100"></canvas>
+            
+            <!-- HUD Status Bar -->
+            <div class="absolute top-2 left-2 right-2 flex justify-between items-center pointer-events-none z-10 gap-2">
+              <span id="hudStatusBadge" class="bg-black/60 backdrop-blur-md text-white text-[10px] font-mono px-2 py-0.5 rounded-lg border border-white/20 font-bold flex items-center gap-1 shrink-0">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> CAMERA ACTIVE
+              </span>
+              <div id="gestureDetectedBadge" class="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-black/70 text-slate-300 border border-white/20 backdrop-blur-sm font-bold flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-slate-500 animate-pulse"></span>
+                <span>Waiting for Hand Sign...</span>
+              </div>
+            </div>
+
+            <!-- SafetyPipeline 1.2s Hold Countdown HUD -->
+            <div id="gestureHoldHud" class="hidden absolute inset-0 bg-black/50 backdrop-blur-xs flex flex-col items-center justify-center p-4 pointer-events-none z-20 transition-all">
+              <div class="w-full max-w-[280px] bg-slate-900/90 border-2 border-white/20 rounded-2xl p-3.5 shadow-2xl flex flex-col items-center">
+                <span id="gestureHoldLabel" class="text-[11px] font-mono font-black text-white uppercase tracking-wider mb-2 text-center drop-shadow">
+                  CONFIRMING HAND SIGN...
+                </span>
+                <!-- Progress Bar Container -->
+                <div class="w-full bg-white/10 rounded-full h-3 overflow-hidden border border-white/20 p-0.5 mb-1.5">
+                  <div id="gestureHoldProgressBar" class="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-emerald-400 rounded-full transition-all duration-75" style="width: 0%"></div>
+                </div>
+                <div class="flex items-center justify-between w-full text-[10px] font-mono text-white/80">
+                  <span>HOLD STEADY</span>
+                  <span id="gestureHoldPercentText" class="font-bold text-emerald-400 font-mono">0%</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Circular Hold Progress HUD Companion -->
+            <div id="hudHoldCountdownContainer" class="hidden absolute inset-0 bg-black/40 backdrop-blur-xs flex flex-col items-center justify-center pointer-events-none z-20 transition-all">
+              <div class="relative w-20 h-20 flex items-center justify-center">
+                <svg class="w-20 h-20 transform -rotate-90" viewBox="0 0 72 72">
+                  <circle cx="36" cy="36" r="30" stroke="rgba(255,255,255,0.2)" stroke-width="6" fill="transparent" />
+                  <circle id="hudHoldSvgRing" cx="36" cy="36" r="30" stroke="#a855f7" stroke-width="6" fill="transparent" stroke-dasharray="188.5" stroke-dashoffset="188.5" stroke-linecap="round" class="transition-all duration-75" />
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center text-white">
+                  <span id="hudHoldEmoji" class="text-xl">✋</span>
+                  <span id="hudHoldSecondsText" class="text-xs font-mono font-black">1.2s</span>
+                </div>
+              </div>
+              <span id="hudHoldLabel" class="text-[11px] font-black text-white mt-1.5 font-mono uppercase tracking-wider drop-shadow">
+                HOLD HAND SIGN STEADY...
+              </span>
+            </div>
+
+            <!-- Automatic SOS Trigger Flash Overlay -->
+            <div id="hudSuccessFlash" class="hidden absolute inset-0 bg-emerald-500/90 backdrop-blur-md flex flex-col items-center justify-center z-30 transition-all">
+              <div class="w-12 h-12 rounded-full bg-white text-emerald-600 flex items-center justify-center text-2xl font-black mb-1 animate-bounce">
+                ✓
+              </div>
+              <span class="text-sm font-black text-white uppercase font-mono tracking-widest text-center px-2">
+                HAND SIGN SOS TRIGGERED!
+              </span>
+              <span class="text-[11px] text-white/95 font-mono mt-0.5 text-center px-2">
+                Live GPS & Alert automatically sent to Receiver
+              </span>
+            </div>
+          </div>
+
+          <p id="txtGestureInstruction" class="text-[10px] text-slate-500 mt-2 font-medium">
+            Show any hand sign (✋ Palm, ✊ Fist, ☝️ Point, ✌️ V-Sign) and hold for 1.2s. When captured, it automatically sends an emergency alert & live GPS to the receiver.
+          </p>
+        </div>
         <div class="mb-3">
           <label id="lblSurvivorName" class="text-[10px] text-slate-600 font-black tracking-wider uppercase font-mono">SURVIVOR NAME / IDENTITY</label>
           <input id="txtName" type="text" maxlength="25" placeholder="Enter your full name (e.g. Charan Are)" class="w-full bg-purple-50/50 border-2 border-purple-200 p-2.5 text-xs rounded-xl mt-1 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-purple-600 transition font-medium">
@@ -694,16 +800,18 @@
     if ('caches' in window) {
       caches.keys().then(function(keys) {
         keys.forEach(function(k) {
-          if (k !== 'silentbridge-v33') caches.delete(k);
+          if (k !== 'silentbridge-v34') caches.delete(k);
         });
       });
     }
   </script>
-  <script src="crc16.js?v=33"></script>
-  <script src="packetEngine.js?v=33"></script>
-  <script src="paho-mqtt.js?v=33"></script>
-  <script src="meshBridge.js?v=33"></script>
-  <script src="audioModem.js?v=33"></script>
-  <script src="app.js?v=33"></script>
+  <!-- High-Precision 100% Offline Pure-JS Canvas Hand & Gesture Engine -->
+  <script src="crc16.js?v=34"></script>
+  <script src="packetEngine.js?v=34"></script>
+  <script src="paho-mqtt.js?v=34"></script>
+  <script src="meshBridge.js?v=34"></script>
+  <script src="audioModem.js?v=34"></script>
+  <script src="gestureCamera.js?v=34"></script>
+  <script src="app.js?v=34"></script>
 </body>
 </html>

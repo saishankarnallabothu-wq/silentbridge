@@ -326,15 +326,15 @@ class SilentBridgeMesh {
     // 2. Cloud Mesh MQTT (Cross-Device across anywhere in the world)
     if (this.mqttClient && this.cloudConnected) {
       try {
-        // Support voice audio memos up to 350KB over WSS MQTT (safe for HiveMQ & EMQX broker WebSocket frames)
+        // Preserve voice audio memos over WSS MQTT (supporting payloads up to 1.5MB on HiveMQ & EMQX)
         const mqttPacket = { ...packetObj };
-        if (mqttPacket.voiceAudio && mqttPacket.voiceAudio.length > 350000) {
-          console.warn("voiceAudio exceeds 350KB MQTT safety threshold, flagging hasVoice:", mqttPacket.voiceAudio.length);
+        if (mqttPacket.voiceAudio && mqttPacket.voiceAudio.length > 1500000) {
+          console.warn("voiceAudio exceeds 1.5MB safety threshold:", mqttPacket.voiceAudio.length);
           mqttPacket.hasVoice = true;
           mqttPacket.voiceAudio = null;
         }
-        if (mqttPacket.ackVoiceAudio && mqttPacket.ackVoiceAudio.length > 350000) {
-          console.warn("ackVoiceAudio exceeds 350KB MQTT safety threshold, flagging hasAckVoice:", mqttPacket.ackVoiceAudio.length);
+        if (mqttPacket.ackVoiceAudio && mqttPacket.ackVoiceAudio.length > 1500000) {
+          console.warn("ackVoiceAudio exceeds 1.5MB safety threshold:", mqttPacket.ackVoiceAudio.length);
           mqttPacket.hasAckVoice = true;
           mqttPacket.ackVoiceAudio = null;
         }

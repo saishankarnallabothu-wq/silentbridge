@@ -445,49 +445,75 @@ class AudioModem {
     }
   }
 
-  playAlarmChime() {
+  // Industrial Emergency Buzzer Sound ("nuzer")
+  playBuzzerSound(duration = 0.8) {
     try {
       if (!this.audioCtx) return;
-      const now = this.audioCtx.currentTime;
-      const osc = this.audioCtx.createOscillator();
-      const gain = this.audioCtx.createGain();
-      osc.connect(gain);
-      gain.connect(this.audioCtx.destination);
+      const ctx = this.audioCtx;
+      const now = ctx.currentTime;
 
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(880, now);
-      osc.frequency.exponentialRampToValueAtTime(1760, now + 0.2);
+      // Master output gain
+      const masterGain = ctx.createGain();
+      masterGain.connect(ctx.destination);
+      if (this.analyser) masterGain.connect(this.analyser);
 
-      gain.gain.setValueAtTime(0.25, now);
-      gain.gain.linearRampToValueAtTime(0.001, now + 0.35);
+      // Carrier: 480 Hz sawtooth wave (classic industrial buzzer frequency)
+      const carrier = ctx.createOscillator();
+      carrier.type = 'sawtooth';
+      carrier.frequency.setValueAtTime(480, now);
 
-      osc.start(now);
-      osc.stop(now + 0.35);
-    } catch (e) {}
+      // Second harmonic: 960 Hz square wave for intense, piercing buzz
+      const harmonic = ctx.createOscillator();
+      harmonic.type = 'square';
+      harmonic.frequency.setValueAtTime(960, now);
+      const harmGain = ctx.createGain();
+      harmGain.gain.setValueAtTime(0.25, now);
+      harmonic.connect(harmGain);
+
+      // 32 Hz Modulator for authentic electrical buzz vibration texture
+      const modOsc = ctx.createOscillator();
+      modOsc.type = 'square';
+      modOsc.frequency.setValueAtTime(32, now);
+      const modGain = ctx.createGain();
+      modGain.gain.setValueAtTime(0.35, now);
+      modOsc.connect(modGain.gain);
+
+      carrier.connect(masterGain);
+      harmGain.connect(masterGain);
+
+      // 3 rapid, powerful buzzer bursts (BZZZ - BZZZ - BZZZ)
+      const burstLen = 0.22;
+      const pauseLen = 0.08;
+      for (let i = 0; i < 3; i++) {
+        const bStart = now + i * (burstLen + pauseLen);
+        const bEnd = bStart + burstLen;
+        masterGain.gain.setValueAtTime(0.001, bStart);
+        masterGain.gain.linearRampToValueAtTime(0.55, bStart + 0.015);
+        masterGain.gain.setValueAtTime(0.55, bEnd - 0.015);
+        masterGain.gain.linearRampToValueAtTime(0.001, bEnd);
+      }
+
+      const totalTime = 3 * (burstLen + pauseLen);
+      carrier.start(now);
+      harmonic.start(now);
+      modOsc.start(now);
+
+      carrier.stop(now + totalTime);
+      harmonic.stop(now + totalTime);
+      modOsc.stop(now + totalTime);
+    } catch (e) {
+      console.warn("Buzzer sound note:", e);
+    }
   }
 
-  // Instant speaker verification chirp
+  playAlarmChime() {
+    this.playBuzzerSound(0.8);
+  }
+
+  // Instant speaker verification buzzer
   async playTestChirp() {
     await this.initAudio();
-    if (!this.audioCtx) return;
-    const ctx = this.audioCtx;
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    if (this.analyser) osc.connect(this.analyser);
-    gain.connect(ctx.destination);
-
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(1300, now);
-    osc.frequency.linearRampToValueAtTime(2700, now + 0.4);
-
-    gain.gain.setValueAtTime(0.001, now);
-    gain.gain.linearRampToValueAtTime(0.4, now + 0.05);
-    gain.gain.linearRampToValueAtTime(0.001, now + 0.4);
-
-    osc.start(now);
-    osc.stop(now + 0.45);
+    this.playBuzzerSound(0.8);
   }
 }
 

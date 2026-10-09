@@ -138,49 +138,59 @@ document.addEventListener("DOMContentLoaded", () => {
     return audioContext;
   }
 
-  // Realistic Emergency Wailing Siren
+  // Industrial Emergency Buzzer Alert Sound ("nuzer")
   function playEmergencyAlertSound() {
     try {
+      if (window.modem && typeof window.modem.playBuzzerSound === 'function') {
+        window.modem.playBuzzerSound(0.8);
+        return;
+      }
       const ctx = getAudioContext();
       const now = ctx.currentTime;
-      const cycles = 3;
-      const cycleDuration = 0.55;
-      const totalDuration = cycles * cycleDuration;
-
       const masterGain = ctx.createGain();
-      masterGain.gain.setValueAtTime(0.01, now);
-      masterGain.gain.linearRampToValueAtTime(0.35, now + 0.08);
-      masterGain.gain.setValueAtTime(0.35, now + totalDuration - 0.1);
-      masterGain.gain.linearRampToValueAtTime(0.001, now + totalDuration);
       masterGain.connect(ctx.destination);
 
-      const osc1 = ctx.createOscillator();
-      osc1.type = "sawtooth";
-      const osc2 = ctx.createOscillator();
-      osc2.type = "sine";
+      const carrier = ctx.createOscillator();
+      carrier.type = 'sawtooth';
+      carrier.frequency.setValueAtTime(480, now);
 
-      for (let i = 0; i < cycles; i++) {
-        const cycleStart = now + (i * cycleDuration);
-        const cycleMid = cycleStart + (cycleDuration / 2);
-        const cycleEnd = cycleStart + cycleDuration;
+      const harmonic = ctx.createOscillator();
+      harmonic.type = 'square';
+      harmonic.frequency.setValueAtTime(960, now);
+      const harmGain = ctx.createGain();
+      harmGain.gain.setValueAtTime(0.25, now);
+      harmonic.connect(harmGain);
 
-        osc1.frequency.setValueAtTime(600, cycleStart);
-        osc1.frequency.exponentialRampToValueAtTime(1300, cycleMid);
-        osc1.frequency.exponentialRampToValueAtTime(600, cycleEnd);
+      const modOsc = ctx.createOscillator();
+      modOsc.type = 'square';
+      modOsc.frequency.setValueAtTime(32, now);
+      const modGain = ctx.createGain();
+      modGain.gain.setValueAtTime(0.35, now);
+      modOsc.connect(modGain.gain);
 
-        osc2.frequency.setValueAtTime(300, cycleStart);
-        osc2.frequency.exponentialRampToValueAtTime(650, cycleMid);
-        osc2.frequency.exponentialRampToValueAtTime(300, cycleEnd);
+      carrier.connect(masterGain);
+      harmGain.connect(masterGain);
+
+      const burstLen = 0.22;
+      const pauseLen = 0.08;
+      for (let i = 0; i < 3; i++) {
+        const bStart = now + i * (burstLen + pauseLen);
+        const bEnd = bStart + burstLen;
+        masterGain.gain.setValueAtTime(0.001, bStart);
+        masterGain.gain.linearRampToValueAtTime(0.55, bStart + 0.015);
+        masterGain.gain.setValueAtTime(0.55, bEnd - 0.015);
+        masterGain.gain.linearRampToValueAtTime(0.001, bEnd);
       }
 
-      osc1.connect(masterGain);
-      osc2.connect(masterGain);
-      osc1.start(now);
-      osc2.start(now);
-      osc1.stop(now + totalDuration);
-      osc2.stop(now + totalDuration);
+      const totalTime = 3 * (burstLen + pauseLen);
+      carrier.start(now);
+      harmonic.start(now);
+      modOsc.start(now);
+      carrier.stop(now + totalTime);
+      harmonic.stop(now + totalTime);
+      modOsc.stop(now + totalTime);
     } catch (err) {
-      console.warn("Siren synthesis note:", err);
+      console.warn("Buzzer alert synthesis note:", err);
     }
   }
 
@@ -732,6 +742,10 @@ document.addEventListener("DOMContentLoaded", () => {
       ackBanner.className = "bg-emerald-50 border-2 border-emerald-500 rounded-3xl p-4 flex items-start justify-between shadow-xl transition-all duration-300 mb-3 text-emerald-950";
     }
 
+    if (window.GestureCamera && typeof window.GestureCamera.applyConfirmedTheme === 'function') {
+      window.GestureCamera.applyConfirmedTheme(true);
+    }
+
   }
 
   // 🔄 Helper to cleanly restore Normal Lavender/Purple Theme with Red Panic button
@@ -895,6 +909,9 @@ document.addEventListener("DOMContentLoaded", () => {
       btnAcousticPing.className = "bg-white hover:bg-emerald-50 border border-emerald-300 text-emerald-800 text-[11px] font-bold py-2 px-2 rounded-xl flex items-center justify-center gap-1.5 transition shadow-sm";
     }
 
+    if (window.GestureCamera && typeof window.GestureCamera.applyConfirmedTheme === 'function') {
+      window.GestureCamera.applyConfirmedTheme(false);
+    }
   }
 
   function resetSenderInputs() {
@@ -1226,11 +1243,70 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ==========================================
-  // 🎙️ HIGH-FIDELITY AUDIO PROCESSOR (16-BIT 16kHz HD PCM WAV)
+  // 🎙️ HIGH-FIDELITY UNIVERSAL AUDIO PROCESSOR (16-BIT 16kHz MONO WAV)
+  // Cross-Platform Guarantee: 100% natively playable on iOS Safari, macOS, Android Chrome, Windows, Linux
   // ==========================================
+
+  // Encodes raw Float32 audio samples into standard 16-bit Mono PCM WAV (RIFF format)
+  function encodePcmToWav(float32Array, sampleRate = 16000) {
+    const targetLength = Math.min(float32Array.length, Math.floor(sampleRate * 4.2));
+    const dataSize = targetLength * 2;
+    const wavBytes = new Uint8Array(44 + dataSize);
+    const view = new DataView(wavBytes.buffer);
+
+    // 1. RIFF Chunk Descriptor
+    view.setUint32(0, 0x52494646, false); // "RIFF"
+    view.setUint32(4, 36 + dataSize, true);
+    view.setUint32(8, 0x57415645, false); // "WAVE"
+
+    // 2. "fmt " Sub-chunk
+    view.setUint32(12, 0x666d7420, false); // "fmt "
+    view.setUint32(16, 16, true);          // Subchunk1Size (16 for PCM)
+    view.setUint16(20, 1, true);           // AudioFormat (1 = PCM)
+    view.setUint16(22, 1, true);           // NumChannels (1 = Mono)
+    view.setUint32(24, sampleRate, true);  // SampleRate (16000)
+    view.setUint32(28, sampleRate * 2, true); // ByteRate (16000 * 1 * 2 = 32000)
+    view.setUint16(32, 2, true);           // BlockAlign (1 * 2 = 2)
+    view.setUint16(34, 16, true);          // BitsPerSample (16)
+
+    // 3. "data" Sub-chunk
+    view.setUint32(36, 0x64617461, false); // "data"
+    view.setUint32(40, dataSize, true);
+
+    let offset = 44;
+    for (let i = 0; i < targetLength; i++) {
+      const s = Math.max(-1, Math.min(1, float32Array[i]));
+      const val = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      view.setInt16(offset, Math.floor(val), true);
+      offset += 2;
+    }
+
+    return new Blob([wavBytes], { type: 'audio/wav' });
+  }
+
+  // Resamples any AudioBuffer to target sample rate (default 16kHz mono)
+  function resampleAudioBuffer(audioBuffer, targetRate = 16000) {
+    const channelData = audioBuffer.getChannelData(0);
+    const sourceRate = audioBuffer.sampleRate;
+    if (sourceRate === targetRate) {
+      return encodePcmToWav(channelData, targetRate);
+    }
+    const ratio = sourceRate / targetRate;
+    const targetLength = Math.min(Math.floor(channelData.length / ratio), Math.floor(targetRate * 4.2));
+    const resampled = new Float32Array(targetLength);
+    for (let i = 0; i < targetLength; i++) {
+      const srcIdx = i * ratio;
+      const idx0 = Math.floor(srcIdx);
+      const idx1 = Math.min(idx0 + 1, channelData.length - 1);
+      const frac = srcIdx - idx0;
+      resampled[i] = channelData[idx0] * (1 - frac) + channelData[idx1] * frac;
+    }
+    return encodePcmToWav(resampled, targetRate);
+  }
+
+  // Universal fallback: converts any audio Blob into a standard 16kHz WAV
   async function downsampleAudioBlob(blob, targetRate = 16000) {
-    // Preserve pristine native MediaRecorder Opus/AAC audio if within safe mesh limits
-    if (!blob || blob.size <= 180000) return blob;
+    if (!blob) return null;
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return blob;
@@ -1248,114 +1324,174 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       });
 
-      if (!decodedBuffer) {
-        ctx.close().catch(() => {});
-        return blob;
-      }
-
-      const channelData = decodedBuffer.getChannelData(0);
-      const sourceRate = decodedBuffer.sampleRate;
-      const ratio = sourceRate / targetRate;
-      // Cap at 6.0 seconds maximum
-      const targetLength = Math.min(Math.floor(channelData.length / ratio), Math.floor(targetRate * 6.0));
-
-      // Build 16-bit Mono PCM WAV (Wideband HD voice, CD-like fidelity)
-      const dataSize = targetLength * 2;
-      const wavBytes = new Uint8Array(44 + dataSize);
-      const view = new DataView(wavBytes.buffer);
-
-      view.setUint32(0, 0x52494646, false); // "RIFF"
-      view.setUint32(4, 36 + dataSize, true);
-      view.setUint32(8, 0x57415645, false); // "WAVE"
-      view.setUint32(12, 0x666d7420, false); // "fmt "
-      view.setUint32(16, 16, true);          // 16 for PCM
-      view.setUint16(20, 1, true);           // PCM format
-      view.setUint16(22, 1, true);           // Mono (1 channel)
-      view.setUint32(24, targetRate, true);  // 16000 Hz
-      view.setUint32(28, targetRate * 2, true); // Byte rate (16000 * 1 * 2)
-      view.setUint16(32, 2, true);           // Block align
-      view.setUint16(34, 16, true);          // 16-bit depth
-      view.setUint32(36, 0x64617461, false); // "data"
-      view.setUint32(40, dataSize, true);
-
-      let offset = 44;
-      for (let i = 0; i < targetLength; i++) {
-        const srcIdx = i * ratio;
-        const idx0 = Math.floor(srcIdx);
-        const idx1 = Math.min(idx0 + 1, channelData.length - 1);
-        const frac = srcIdx - idx0;
-        const sample = channelData[idx0] * (1 - frac) + channelData[idx1] * frac;
-        const clamped = Math.max(-1, Math.min(1, sample));
-        const int16 = clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF;
-        view.setInt16(offset, Math.floor(int16), true);
-        offset += 2;
-      }
-
       ctx.close().catch(() => {});
-      console.log(`🎙️ High-definition voice processed: raw ${blob.size}B -> HD WAV ${wavBytes.length}B`);
-      return new Blob([wavBytes], { type: 'audio/wav' });
+      if (decodedBuffer) {
+        return resampleAudioBuffer(decodedBuffer, targetRate);
+      }
     } catch (e) {
-      console.warn("Audio processing note:", e);
-      return blob;
+      console.warn("Universal WAV conversion fallback notice:", e);
     }
+    return blob;
+  }
+
+  // Survivor Active Recording Infrastructure
+  let survivorPcmChunks = [];
+  let survivorScriptProcessor = null;
+  let survivorVoiceCompletionCallbacks = [];
+
+  function flushSurvivorVoiceCallbacks(base64) {
+    const cbs = survivorVoiceCompletionCallbacks.slice();
+    survivorVoiceCompletionCallbacks = [];
+    cbs.forEach(cb => {
+      try { cb(base64); } catch (e) { console.warn(e); }
+    });
   }
 
   // Auto-finalize any active voice recording before broadcast dispatch
   function stopVoiceRecording(onCompletedCallback) {
+    if (typeof onCompletedCallback === 'function') {
+      survivorVoiceCompletionCallbacks.push(onCompletedCallback);
+    }
+
+    if (!isRecording && !isVoiceProcessing) {
+      flushSurvivorVoiceCallbacks(senderVoiceBase64);
+      return;
+    }
+
     if (recordTimerInterval) {
       clearInterval(recordTimerInterval);
       recordTimerInterval = null;
     }
+
+    isRecording = false;
+    isVoiceProcessing = true;
+
     const btnRecordVoice = document.getElementById("btnRecordVoice");
     const recordTimer = document.getElementById("recordTimer");
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      try {
-        mediaRecorder.stop();
-      } catch (e) {
-        console.warn("mediaRecorder stop note:", e);
-      }
-    }
-    isRecording = false;
-    if (voiceRecordingMicStream) {
-      try {
-        voiceRecordingMicStream.getTracks().forEach(t => t.stop());
-      } catch (e) {}
-      voiceRecordingMicStream = null;
-    }
     if (btnRecordVoice) {
-      btnRecordVoice.innerText = "🔄 Re-Record Voice";
-      btnRecordVoice.className = "bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition shadow-sm";
+      btnRecordVoice.innerText = "⏳ Attaching Voice...";
+      btnRecordVoice.className = "bg-amber-600 text-white text-xs font-bold py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition";
     }
     if (recordTimer) recordTimer.innerText = "00:04";
-    if (typeof onCompletedCallback === 'function') {
-      voiceRecordResolvePromise = onCompletedCallback;
+
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      try { mediaRecorder.stop(); } catch (e) { console.warn(e); }
     }
+
+    if (voiceRecordingMicStream) {
+      try { voiceRecordingMicStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+      voiceRecordingMicStream = null;
+    }
+
+    finalizeSurvivorVoiceMemo();
+  }
+
+  async function finalizeSurvivorVoiceMemo() {
+    let wavBlob = null;
+    const targetRate = 16000;
+
+    // Direct High-Fidelity PCM Pipeline (captures raw mic samples with 0% codec degradation)
+    if (survivorScriptProcessor && survivorPcmChunks.length > 0) {
+      try {
+        let totalLen = 0;
+        for (let i = 0; i < survivorPcmChunks.length; i++) totalLen += survivorPcmChunks[i].length;
+        if (totalLen > 0) {
+          const merged = new Float32Array(totalLen);
+          let offset = 0;
+          for (let i = 0; i < survivorPcmChunks.length; i++) {
+            merged.set(survivorPcmChunks[i], offset);
+            offset += survivorPcmChunks[i].length;
+          }
+          const srcRate = survivorScriptProcessor.sampleRate || 48000;
+          const ratio = srcRate / targetRate;
+          const targetLength = Math.min(Math.floor(merged.length / ratio), Math.floor(targetRate * 4.2));
+          const resampled = new Float32Array(targetLength);
+          for (let i = 0; i < targetLength; i++) {
+            const srcIdx = i * ratio;
+            const idx0 = Math.floor(srcIdx);
+            const idx1 = Math.min(idx0 + 1, merged.length - 1);
+            const frac = srcIdx - idx0;
+            resampled[i] = merged[idx0] * (1 - frac) + merged[idx1] * frac;
+          }
+          wavBlob = encodePcmToWav(resampled, targetRate);
+        }
+      } catch (pcmErr) {
+        console.warn("PCM direct capture conversion notice:", pcmErr);
+      }
+    }
+
+    // Clean up ScriptProcessor
+    if (survivorScriptProcessor) {
+      try {
+        survivorScriptProcessor.micSource.disconnect();
+        survivorScriptProcessor.processor.disconnect();
+        survivorScriptProcessor.silence.disconnect();
+      } catch (e) {}
+      survivorScriptProcessor = null;
+    }
+    survivorPcmChunks = [];
+
+    // Fallback path: convert raw MediaRecorder blob if direct PCM was empty
+    if (!wavBlob && recordedChunks.length > 0) {
+      try {
+        const mime = (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
+        const rawBlob = new Blob(recordedChunks, { type: mime });
+        wavBlob = await downsampleAudioBlob(rawBlob, targetRate);
+      } catch (blobErr) {
+        console.warn("MediaRecorder fallback blob conversion notice:", blobErr);
+      }
+    }
+
+    if (!wavBlob) {
+      isVoiceProcessing = false;
+      flushSurvivorVoiceCallbacks(senderVoiceBase64);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.readAsDataURL(wavBlob);
+    reader.onloadend = () => {
+      senderVoiceBase64 = reader.result;
+      isVoiceProcessing = false;
+
+      const recordTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const audioPreview = document.getElementById("audioPreview");
+      const recordStatus = document.getElementById("recordStatus");
+      const voiceAttachedBadge = document.getElementById("voiceAttachedBadge");
+      const btnClearVoice = document.getElementById("btnClearVoice");
+      const btnRecordVoice = document.getElementById("btnRecordVoice");
+
+      if (audioPreview) {
+        audioPreview.src = senderVoiceBase64;
+        audioPreview.classList.remove("hidden");
+      }
+      if (recordStatus) {
+        recordStatus.innerText = `✓ 16kHz HD Voice note recorded at ${recordTimestamp} and attached to SOS.`;
+        recordStatus.className = "text-[10px] text-emerald-800 font-bold mt-1.5";
+      }
+      if (voiceAttachedBadge) voiceAttachedBadge.classList.remove("hidden");
+      if (btnClearVoice) btnClearVoice.classList.remove("hidden");
+      if (btnRecordVoice) {
+        btnRecordVoice.innerText = "🔄 Re-Record Voice";
+        btnRecordVoice.className = "bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition shadow-sm";
+      }
+
+      TacticalSpeech.speak("Voice memo attached to emergency beacon.");
+      console.log(`🎙️ Universal 16kHz WAV voice memo ready for rescuer! Length: ${senderVoiceBase64.length} chars.`);
+      flushSurvivorVoiceCallbacks(senderVoiceBase64);
+    };
   }
 
   async function finishAnyActiveVoiceRecording() {
-    if (isRecording) {
+    if (isRecording || isVoiceProcessing) {
       console.log("🎙️ BROADCAST triggered while recording - automatically finalizing voice memo...");
       const btnRecordVoice = document.getElementById("btnRecordVoice");
       if (btnRecordVoice) {
         btnRecordVoice.innerText = "⏳ Attaching Voice...";
       }
       return new Promise((resolve) => {
-        stopVoiceRecording((base64) => {
-          resolve(base64);
-        });
-        setTimeout(() => resolve(senderVoiceBase64), 2000);
-      });
-    }
-    if (isVoiceProcessing) {
-      console.log("🎙️ Voice memo processing in progress - awaiting base64 encoding...");
-      return new Promise((resolve) => {
-        const waitInterval = setInterval(() => {
-          if (!isVoiceProcessing) {
-            clearInterval(waitInterval);
-            resolve(senderVoiceBase64);
-          }
-        }, 50);
-        setTimeout(() => { clearInterval(waitInterval); resolve(senderVoiceBase64); }, 2000);
+        stopVoiceRecording((base64) => resolve(base64));
+        setTimeout(() => resolve(senderVoiceBase64), 2500);
       });
     }
     return senderVoiceBase64;
@@ -1378,8 +1514,9 @@ document.addEventListener("DOMContentLoaded", () => {
       await modem.initAudio();
       if (!isRecording) {
         recordedChunks = [];
+        survivorPcmChunks = [];
+
         try {
-          // Clean, dedicated microphone stream for recording
           voiceRecordingMicStream = await navigator.mediaDevices.getUserMedia({
             audio: {
               echoCancellation: true,
@@ -1389,76 +1526,60 @@ document.addEventListener("DOMContentLoaded", () => {
             }
           });
 
+          // Setup real-time PCM capture pipeline
+          try {
+            const actx = getAudioContext();
+            const micSource = actx.createMediaStreamSource(voiceRecordingMicStream);
+            const processor = actx.createScriptProcessor(4096, 1, 1);
+            processor.onaudioprocess = (e) => {
+              if (!isRecording) return;
+              const input = e.inputBuffer.getChannelData(0);
+              survivorPcmChunks.push(new Float32Array(input));
+            };
+            const silence = actx.createGain();
+            silence.gain.setValueAtTime(0, actx.currentTime);
+            micSource.connect(processor);
+            processor.connect(silence);
+            silence.connect(actx.destination);
+            survivorScriptProcessor = { processor, micSource, silence, sampleRate: actx.sampleRate };
+          } catch (pcmErr) {
+            console.warn("Real-time PCM stream capture init note:", pcmErr);
+            survivorScriptProcessor = null;
+          }
+
+          // Concurrent MediaRecorder backup
           let recorderOptions = {};
           if (typeof MediaRecorder !== 'undefined') {
             if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-              recorderOptions = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 16000 };
-            } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-              recorderOptions = { mimeType: 'audio/webm', audioBitsPerSecond: 16000 };
+              recorderOptions = { mimeType: 'audio/webm;codecs=opus' };
             } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-              recorderOptions = { mimeType: 'audio/mp4', audioBitsPerSecond: 24000 };
-            } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
-              recorderOptions = { mimeType: 'audio/ogg', audioBitsPerSecond: 16000 };
+              recorderOptions = { mimeType: 'audio/mp4' };
+            }
+            try {
+              mediaRecorder = new MediaRecorder(voiceRecordingMicStream, recorderOptions);
+              mediaRecorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+              };
+              mediaRecorder.start(250);
+            } catch (mrErr) {
+              console.warn("MediaRecorder init note:", mrErr);
             }
           }
-          mediaRecorder = new MediaRecorder(voiceRecordingMicStream, recorderOptions);
         } catch (micErr) {
           console.warn("Voice recorder mic error:", micErr);
           if (recordStatus) {
             recordStatus.innerText = "Microphone access denied. Please grant microphone permission.";
-            recordStatus.className = "text-[10px] text-red-400 font-bold mt-1.5";
+            recordStatus.className = "text-[10px] text-red-500 font-bold mt-1.5";
           }
           return;
         }
 
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) recordedChunks.push(e.data);
-        };
-
-        mediaRecorder.onstop = async () => {
-          isVoiceProcessing = true;
-          const mime = (mediaRecorder && mediaRecorder.mimeType) || 'audio/webm';
-          let blob = new Blob(recordedChunks, { type: mime });
-
-          // Preserve pristine native MediaRecorder audio; only compress with HD 16kHz if exceedingly large (> 180KB)
-          if (blob.size > 180000) {
-            blob = await downsampleAudioBlob(blob, 16000);
-          }
-
-          const reader = new FileReader();
-          reader.readAsDataURL(blob);
-          reader.onloadend = () => {
-            senderVoiceBase64 = reader.result;
-            isVoiceProcessing = false;
-
-            const recordTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            if (audioPreview) {
-              audioPreview.src = senderVoiceBase64;
-              audioPreview.classList.remove("hidden");
-            }
-            if (recordStatus) {
-              recordStatus.innerText = `✓ Voice note recorded at ${recordTimestamp} and attached to SOS.`;
-              recordStatus.className = "text-[10px] text-emerald-300 font-bold mt-1.5";
-            }
-            if (voiceAttachedBadge) voiceAttachedBadge.classList.remove("hidden");
-            if (btnClearVoice) btnClearVoice.classList.remove("hidden");
-            TacticalSpeech.speak("Voice memo attached to emergency beacon.");
-
-            if (voiceRecordResolvePromise) {
-              const cb = voiceRecordResolvePromise;
-              voiceRecordResolvePromise = null;
-              cb(senderVoiceBase64);
-            }
-          };
-        };
-
-        mediaRecorder.start(250);
         isRecording = true;
         btnRecordVoice.innerText = "⏹️ Stop Recording (4s)";
-        btnRecordVoice.className = "bg-red-500 text-white text-xs font-bold py-2 px-3 rounded-md flex items-center gap-1.5 transition animate-pulse";
+        btnRecordVoice.className = "bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition animate-pulse shadow-md";
         if (recordStatus) {
-          recordStatus.innerText = "Recording voice memo (max 4s)... Speak clearly.";
-          recordStatus.className = "text-[10px] text-amber-300 font-bold mt-1.5 animate-pulse";
+          recordStatus.innerText = "Recording 16kHz voice memo (max 4s)... Speak clearly.";
+          recordStatus.className = "text-[10px] text-purple-900 font-bold mt-1.5 animate-pulse";
         }
 
         let seconds = 0;
@@ -1478,6 +1599,7 @@ document.addEventListener("DOMContentLoaded", () => {
       btnClearVoice.addEventListener("click", () => {
         senderVoiceBase64 = null;
         recordedChunks = [];
+        survivorPcmChunks = [];
         if (audioPreview) {
           audioPreview.src = "";
           audioPreview.classList.add("hidden");
@@ -1485,11 +1607,11 @@ document.addEventListener("DOMContentLoaded", () => {
         btnClearVoice.classList.add("hidden");
         if (voiceAttachedBadge) voiceAttachedBadge.classList.add("hidden");
         if (recordStatus) {
-          recordStatus.innerText = "Record a situational voice clip to attach to your SOS.";
+          recordStatus.innerText = "Record a 4-second voice note. Even if recording is active when tapping Broadcast, it will automatically attach.";
           recordStatus.className = "text-[10px] text-slate-500 mt-1.5";
         }
         if (recordTimer) recordTimer.innerText = "00:00";
-        btnRecordVoice.innerText = "🎙️ Record Voice Note";
+        btnRecordVoice.innerText = "🎙️ Hold/Tap to Record Voice";
         btnRecordVoice.className = "bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 px-3.5 rounded-xl flex items-center gap-1.5 transition shadow-sm";
       });
     }
@@ -1505,36 +1627,139 @@ document.addEventListener("DOMContentLoaded", () => {
   let isRescuerRecording = false;
   let rescuerRecordTimerInterval = null;
   let rescuerMicStream = null;
-  let rescuerVoiceResolvePromise = null;
+  let rescuerPcmChunks = [];
+  let rescuerScriptProcessor = null;
+  let rescuerVoiceCompletionCallbacks = [];
+
+  function flushRescuerVoiceCallbacks(base64) {
+    const cbs = rescuerVoiceCompletionCallbacks.slice();
+    rescuerVoiceCompletionCallbacks = [];
+    cbs.forEach(cb => {
+      try { cb(base64); } catch (e) { console.warn(e); }
+    });
+  }
 
   function stopRescuerVoiceRecording(onCompletedCallback) {
+    if (typeof onCompletedCallback === 'function') {
+      rescuerVoiceCompletionCallbacks.push(onCompletedCallback);
+    }
+
+    if (!isRescuerRecording) {
+      flushRescuerVoiceCallbacks(rescuerVoiceBase64);
+      return;
+    }
+
     if (rescuerRecordTimerInterval) {
       clearInterval(rescuerRecordTimerInterval);
       rescuerRecordTimerInterval = null;
     }
+    isRescuerRecording = false;
+
     const btnRecord = document.getElementById("btnRecordRescuerVoice");
+    if (btnRecord) {
+      btnRecord.innerText = "⏳ Processing...";
+      btnRecord.className = "bg-amber-600 text-white text-xs font-bold py-1.5 px-3 rounded-xl flex items-center gap-1.5 transition";
+    }
+
     if (rescuerMediaRecorder && rescuerMediaRecorder.state !== 'inactive') {
       try { rescuerMediaRecorder.stop(); } catch (e) {}
     }
-    isRescuerRecording = false;
     if (rescuerMicStream) {
       try { rescuerMicStream.getTracks().forEach(t => t.stop()); } catch (e) {}
       rescuerMicStream = null;
     }
-    if (btnRecord) {
-      btnRecord.innerText = "🔄 Re-Record Instruction";
-      btnRecord.className = "bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-1.5 px-3 rounded-xl flex items-center gap-1.5 border border-purple-400/30 transition shadow-sm";
+
+    finalizeRescuerVoiceMemo();
+  }
+
+  async function finalizeRescuerVoiceMemo() {
+    let wavBlob = null;
+    const targetRate = 16000;
+
+    if (rescuerScriptProcessor && rescuerPcmChunks.length > 0) {
+      try {
+        let totalLen = 0;
+        for (let i = 0; i < rescuerPcmChunks.length; i++) totalLen += rescuerPcmChunks[i].length;
+        if (totalLen > 0) {
+          const merged = new Float32Array(totalLen);
+          let offset = 0;
+          for (let i = 0; i < rescuerPcmChunks.length; i++) {
+            merged.set(rescuerPcmChunks[i], offset);
+            offset += rescuerPcmChunks[i].length;
+          }
+          const srcRate = rescuerScriptProcessor.sampleRate || 48000;
+          const ratio = srcRate / targetRate;
+          const targetLength = Math.min(Math.floor(merged.length / ratio), Math.floor(targetRate * 4.2));
+          const resampled = new Float32Array(targetLength);
+          for (let i = 0; i < targetLength; i++) {
+            const srcIdx = i * ratio;
+            const idx0 = Math.floor(srcIdx);
+            const idx1 = Math.min(idx0 + 1, merged.length - 1);
+            const frac = srcIdx - idx0;
+            resampled[i] = merged[idx0] * (1 - frac) + merged[idx1] * frac;
+          }
+          wavBlob = encodePcmToWav(resampled, targetRate);
+        }
+      } catch (pcmErr) {
+        console.warn("Rescuer PCM direct conversion note:", pcmErr);
+      }
     }
-    if (typeof onCompletedCallback === 'function') {
-      rescuerVoiceResolvePromise = onCompletedCallback;
+
+    if (rescuerScriptProcessor) {
+      try {
+        rescuerScriptProcessor.micSource.disconnect();
+        rescuerScriptProcessor.processor.disconnect();
+        rescuerScriptProcessor.silence.disconnect();
+      } catch (e) {}
+      rescuerScriptProcessor = null;
     }
+    rescuerPcmChunks = [];
+
+    if (!wavBlob && rescuerRecordedChunks.length > 0) {
+      try {
+        const mime = (rescuerMediaRecorder && rescuerMediaRecorder.mimeType) || 'audio/webm';
+        const rawBlob = new Blob(rescuerRecordedChunks, { type: mime });
+        wavBlob = await downsampleAudioBlob(rawBlob, targetRate);
+      } catch (blobErr) {
+        console.warn("Rescuer blob conversion note:", blobErr);
+      }
+    }
+
+    if (!wavBlob) {
+      flushRescuerVoiceCallbacks(rescuerVoiceBase64);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.readAsDataURL(wavBlob);
+    reader.onloadend = () => {
+      rescuerVoiceBase64 = reader.result;
+      const preview = document.getElementById("rescuerAudioPreview");
+      const badge = document.getElementById("rescuerVoiceBadge");
+      const btnClear = document.getElementById("btnClearRescuerVoice");
+      const btnRecord = document.getElementById("btnRecordRescuerVoice");
+
+      if (preview) {
+        preview.src = rescuerVoiceBase64;
+        preview.classList.remove("hidden");
+      }
+      if (badge) badge.classList.remove("hidden");
+      if (btnClear) btnClear.classList.remove("hidden");
+      if (btnRecord) {
+        btnRecord.innerText = "🔄 Re-Record Instruction";
+        btnRecord.className = "bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-1.5 px-3 rounded-xl flex items-center gap-1.5 border border-purple-400/30 transition shadow-sm";
+      }
+
+      console.log(`🎙️ Rescuer 16kHz WAV voice instruction ready! (${rescuerVoiceBase64.length} chars)`);
+      flushRescuerVoiceCallbacks(rescuerVoiceBase64);
+    };
   }
 
   async function finishAnyActiveRescuerVoiceRecording() {
     if (isRescuerRecording) {
       return new Promise((resolve) => {
         stopRescuerVoiceRecording((base64) => resolve(base64));
-        setTimeout(() => resolve(rescuerVoiceBase64), 2000);
+        setTimeout(() => resolve(rescuerVoiceBase64), 2500);
       });
     }
     return rescuerVoiceBase64;
@@ -1553,58 +1778,49 @@ document.addEventListener("DOMContentLoaded", () => {
       await modem.initAudio();
       if (!isRescuerRecording) {
         rescuerRecordedChunks = [];
+        rescuerPcmChunks = [];
         try {
           rescuerMicStream = await navigator.mediaDevices.getUserMedia({
             audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }
           });
+
+          try {
+            const actx = getAudioContext();
+            const micSource = actx.createMediaStreamSource(rescuerMicStream);
+            const processor = actx.createScriptProcessor(4096, 1, 1);
+            processor.onaudioprocess = (e) => {
+              if (!isRescuerRecording) return;
+              const input = e.inputBuffer.getChannelData(0);
+              rescuerPcmChunks.push(new Float32Array(input));
+            };
+            const silence = actx.createGain();
+            silence.gain.setValueAtTime(0, actx.currentTime);
+            micSource.connect(processor);
+            processor.connect(silence);
+            silence.connect(actx.destination);
+            rescuerScriptProcessor = { processor, micSource, silence, sampleRate: actx.sampleRate };
+          } catch (e) {
+            rescuerScriptProcessor = null;
+          }
+
           let recorderOptions = {};
           if (typeof MediaRecorder !== 'undefined') {
             if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-              recorderOptions = { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 16000 };
-            } else if (MediaRecorder.isTypeSupported('audio/webm')) {
-              recorderOptions = { mimeType: 'audio/webm', audioBitsPerSecond: 16000 };
+              recorderOptions = { mimeType: 'audio/webm;codecs=opus' };
             } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-              recorderOptions = { mimeType: 'audio/mp4', audioBitsPerSecond: 24000 };
+              recorderOptions = { mimeType: 'audio/mp4' };
             }
           }
           rescuerMediaRecorder = new MediaRecorder(rescuerMicStream, recorderOptions);
+          rescuerMediaRecorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) rescuerRecordedChunks.push(e.data);
+          };
+          rescuerMediaRecorder.start(250);
         } catch (e) {
           console.warn("Rescuer mic access note:", e);
           return;
         }
 
-        rescuerMediaRecorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) rescuerRecordedChunks.push(e.data);
-        };
-
-        rescuerMediaRecorder.onstop = async () => {
-          const mime = (rescuerMediaRecorder && rescuerMediaRecorder.mimeType) || 'audio/webm';
-          let blob = new Blob(rescuerRecordedChunks, { type: mime });
-          // Preserve native HD audio; only compress if exceedingly large (> 180KB)
-          if (blob.size > 180000) {
-            blob = await downsampleAudioBlob(blob, 16000);
-          }
-
-          const reader = new FileReader();
-          reader.readAsDataURL(blob);
-          reader.onloadend = () => {
-            rescuerVoiceBase64 = reader.result;
-            if (preview) {
-              preview.src = rescuerVoiceBase64;
-              preview.classList.remove("hidden");
-            }
-            if (badge) badge.classList.remove("hidden");
-            if (btnClear) btnClear.classList.remove("hidden");
-
-            if (rescuerVoiceResolvePromise) {
-              const cb = rescuerVoiceResolvePromise;
-              rescuerVoiceResolvePromise = null;
-              cb(rescuerVoiceBase64);
-            }
-          };
-        };
-
-        rescuerMediaRecorder.start(250);
         isRescuerRecording = true;
         btnRecord.innerText = "⏹️ Stop (Recording)";
         btnRecord.className = "bg-red-500 text-white text-xs font-bold py-1.5 px-3 rounded-md flex items-center gap-1.5 animate-pulse";
@@ -1626,6 +1842,7 @@ document.addEventListener("DOMContentLoaded", () => {
       btnClear.addEventListener("click", () => {
         rescuerVoiceBase64 = null;
         rescuerRecordedChunks = [];
+        rescuerPcmChunks = [];
         if (preview) {
           preview.src = "";
           preview.classList.add("hidden");
@@ -1747,11 +1964,25 @@ document.addEventListener("DOMContentLoaded", () => {
     return packetObj;
   }
 
-  // 1-Tap Instant Panic Button with Immediate Non-Blocking Audio Output
+  // 🚨 Global Panic SOS Dispatcher for Hands-Free Gesture Camera & Emergency Triggers
+  window.executePanicSosDispatch = async function (opts = {}) {
+    const customType = (opts && opts.distressType) !== undefined ? opts.distressType : 2;
+    const customNote = (opts && opts.message) ? opts.message : 'CAMERA GESTURE SOS';
+    if (window.modem && typeof window.modem.playBuzzerSound === 'function') {
+      try { window.modem.playBuzzerSound(0.8); } catch (e) {}
+    }
+    return await executeSosDispatch({ isPanic: true, customNote: customNote, customType: customType });
+  };
+
+  // 1-Tap Instant Panic Button with Immediate Acoustic Buzzer Output
   document.getElementById("btnInstantPanic").addEventListener("click", async () => {
     const btn = document.getElementById("btnInstantPanic");
     const originalHtml = btn.innerHTML;
-    btn.innerHTML = `<span>🔊</span> BROADCASTING ACOUSTIC SOUND...`;
+    btn.innerHTML = `<span>🔊</span> BROADCASTING BUZZER & SOS...`;
+
+    if (window.modem && typeof window.modem.playBuzzerSound === 'function') {
+      try { window.modem.playBuzzerSound(0.8); } catch (e) {}
+    }
 
     await executeSosDispatch({ isPanic: true });
 
