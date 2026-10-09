@@ -26,7 +26,7 @@
 
   const GESTURE_LABELS = {
     palm: 'OPEN PALM (HOLD 1.5s)',
-    fist: 'FIST (HOLD 1.5s)',
+    fist: 'CLOSED FIST (HOLD 1.5s)',
     pointing: 'POINTING (HOLD 1.5s)',
     v_sign: 'V-SIGN (HOLD 1.5s)',
     thumbs_up: 'THUMBS UP (HOLD 1.5s)',
@@ -44,6 +44,7 @@
   let offscreenCtx = null;
   let stream = null;
   let isRunning = false;
+  let isOpening = false;
   let currentFacingMode = 'user'; // 'user' or 'environment'
   let animationFrameId = null;
 
@@ -53,10 +54,20 @@
   let lastDetectedTimestamp = 0;
   let isTriggerCooldown = false;
   let onSosTriggerCallback = null;
+  let isUiBound = false;
+  let simIntervalId = null;
 
   const GestureCamera = {
     init(options = {}) {
-      onSosTriggerCallback = options.onTrigger || null;
+      if (options.onTrigger) {
+        onSosTriggerCallback = options.onTrigger;
+      }
+      this.bindUi();
+      console.log('📷 SilentBridge Hand Sign SOS Engine Initialized.');
+    },
+
+    bindUi() {
+      if (isUiBound) return;
       videoEl = document.getElementById('gestureVideo');
       canvasOverlay = document.getElementById('gestureCanvasOverlay');
 
@@ -72,75 +83,197 @@
 
       // Setup UI Listeners
       const btnToggle = document.getElementById('btnToggleGestureCamera');
-      if (btnToggle) {
-        btnToggle.addEventListener('click', () => this.toggle());
+      if (btnToggle && !btnToggle._hasGestureCameraListener) {
+        btnToggle._hasGestureCameraListener = true;
+        btnToggle.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.toggle();
+        });
       }
 
       const btnFlip = document.getElementById('btnFlipCamera');
-      if (btnFlip) {
-        btnFlip.addEventListener('click', () => this.flipCamera());
+      if (btnFlip && !btnFlip._hasGestureCameraListener) {
+        btnFlip._hasGestureCameraListener = true;
+        btnFlip.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.flipCamera();
+        });
       }
 
-      console.log('📷 SilentBridge Hand Sign SOS Engine Initialized (100% Offline Canvas Vision).');
+      isUiBound = true;
     },
 
     async start() {
-      if (isRunning) return;
-      try {
-        const constraints = {
-          video: {
-            facingMode: currentFacingMode,
-            width: { ideal: 640 },
-            height: { ideal: 480 }
-          },
-          audio: false
-        };
+      if (isRunning || isOpening) return;
+      isOpening = true;
 
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.bindUi();
+      const btnToggle = document.getElementById('btnToggleGestureCamera');
+      const wrapper = document.getElementById('gestureVideoWrapper');
+      const hudStatus = document.getElementById('hudStatusBadge');
+      const hudGesture = document.getElementById('hudDetectedGesture');
+
+      // 1. Immediately provide visual feedback to user
+      if (btnToggle) {
+        btnToggle.innerHTML = `<span>⏳</span> Opening Camera...`;
+        btnToggle.classList.replace('bg-purple-600', 'bg-amber-600');
+        btnToggle.classList.replace('hover:bg-purple-700', 'hover:bg-amber-700');
+      }
+      if (wrapper) {
+        wrapper.classList.remove('hidden');
+        wrapper.style.display = 'flex';
+      }
+      if (hudStatus) {
+        hudStatus.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span> REQUESTING CAMERA...`;
+      }
+      if (hudGesture) {
+        hudGesture.innerText = 'STARTING SENSOR...';
+      }
+
+      // 2. Camera API Availability Check
+      const hasMediaDevices = Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+      const legacyGetUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
+
+      if (!hasMediaDevices && !legacyGetUserMedia) {
+        const isSecure = window.isSecureContext || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        let errMsg = 'Camera access is not supported by this browser.';
+        if (!isSecure) {
+          errMsg = 'Camera requires a secure HTTPS connection. Please access https://silentbridge-i39k.vercel.app/';
+        }
+        alert(errMsg);
+        this.resetUiToStopped();
+        isOpening = false;
+        return;
+      }
+
+      const requestStream = async (constraints) => {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          return await navigator.mediaDevices.getUserMedia(constraints);
+        }
+        return await new Promise((resolve, reject) => {
+          legacyGetUserMedia.call(navigator, constraints, resolve, reject);
+        });
+      };
+
+      try {
+        let streamAcquired = null;
+        let lastErr = null;
+
+        // Tier 1: Try with ideal facingMode and ideal resolution
+        try {
+          streamAcquired = await requestStream({
+            video: {
+              facingMode: { ideal: currentFacingMode },
+              width: { ideal: 640 },
+              height: { ideal: 480 }
+            },
+            audio: false
+          });
+        } catch (e1) {
+          lastErr = e1;
+          console.warn('Camera Tier 1 constraint failed, trying Tier 2:', e1);
+        }
+
+        // Tier 2: Try basic video constraints
+        if (!streamAcquired) {
+          try {
+            streamAcquired = await requestStream({
+              video: { width: { ideal: 640 }, height: { ideal: 480 } },
+              audio: false
+            });
+          } catch (e2) {
+            lastErr = e2;
+            console.warn('Camera Tier 2 constraint failed, trying Tier 3:', e2);
+          }
+        }
+
+        // Tier 3: Bare minimum video constraint
+        if (!streamAcquired) {
+          try {
+            streamAcquired = await requestStream({ video: true, audio: false });
+          } catch (e3) {
+            lastErr = e3;
+          }
+        }
+
+        if (!streamAcquired) {
+          throw lastErr || new Error('Could not access video source');
+        }
+
+        stream = streamAcquired;
+
         if (!videoEl) videoEl = document.getElementById('gestureVideo');
         if (videoEl) {
+          videoEl.muted = true;
+          videoEl.playsInline = true;
+          videoEl.setAttribute('playsinline', '');
+          videoEl.setAttribute('muted', '');
+          videoEl.setAttribute('autoplay', '');
           videoEl.srcObject = stream;
-          await videoEl.play();
+
+          // Ensure video playback starts reliably
+          await new Promise((resolve) => {
+            let done = false;
+            const complete = () => {
+              if (!done) {
+                done = true;
+                resolve();
+              }
+            };
+            videoEl.onloadedmetadata = () => {
+              videoEl.play().catch(e => console.warn('video.play note:', e)).finally(complete);
+            };
+            videoEl.onplaying = complete;
+            videoEl.play().then(complete).catch(() => {});
+            setTimeout(complete, 1200); // Safety fallback timeout
+          });
         }
 
         isRunning = true;
+        isOpening = false;
         this.updateUiState(true);
 
         const btnFlip = document.getElementById('btnFlipCamera');
         if (btnFlip) btnFlip.classList.remove('hidden');
 
-        // Start real-time detection loop
+        // Start real-time frame processing
         this.processFrame();
+
       } catch (err) {
+        isOpening = false;
         console.error('Camera open error:', err);
-        // Try fallback with minimal constraints
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          if (!videoEl) videoEl = document.getElementById('gestureVideo');
-          if (videoEl) {
-            videoEl.srcObject = stream;
-            await videoEl.play();
-          }
-          isRunning = true;
-          this.updateUiState(true);
-          const btnFlip = document.getElementById('btnFlipCamera');
-          if (btnFlip) btnFlip.classList.remove('hidden');
-          this.processFrame();
-        } catch (fallbackErr) {
-          alert('Could not open camera. Please grant camera permission in your browser: ' + (fallbackErr.message || 'Permission denied'));
-          this.updateUiState(false);
+        let errorMsg = 'Could not open camera: ' + (err.name || 'Error');
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          errorMsg = 'Camera permission was denied. Please click the lock or camera icon in your browser address bar and select "Allow" camera access.';
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          errorMsg = 'No camera hardware found on this system.';
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          errorMsg = 'Camera is currently in use by another application or tab (e.g. Zoom, Teams, Google Meet). Please close other camera apps and try again.';
+        } else if (err.name === 'OverconstrainedError') {
+          errorMsg = 'Camera requested settings could not be satisfied. Please check your camera permissions.';
+        } else if (err.message) {
+          errorMsg += ` - ${err.message}`;
         }
+        alert(errorMsg);
+        this.resetUiToStopped();
       }
     },
 
     stop() {
       isRunning = false;
+      isOpening = false;
+      if (simIntervalId) {
+        clearInterval(simIntervalId);
+        simIntervalId = null;
+      }
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
       }
       if (stream) {
-        stream.getTracks().forEach(t => t.stop());
+        try {
+          stream.getTracks().forEach(t => t.stop());
+        } catch (e) {}
         stream = null;
       }
       if (videoEl) {
@@ -151,14 +284,18 @@
       }
 
       this.resetHoldState();
-      this.updateUiState(false);
+      this.resetUiToStopped();
 
       const btnFlip = document.getElementById('btnFlipCamera');
       if (btnFlip) btnFlip.classList.add('hidden');
     },
 
+    resetUiToStopped() {
+      this.updateUiState(false);
+    },
+
     toggle() {
-      if (isRunning) {
+      if (isRunning || isOpening) {
         this.stop();
       } else {
         this.start();
@@ -177,28 +314,36 @@
       const btnToggle = document.getElementById('btnToggleGestureCamera');
       const wrapper = document.getElementById('gestureVideoWrapper');
       const hudStatus = document.getElementById('hudStatusBadge');
+      const hudGesture = document.getElementById('hudDetectedGesture');
 
       if (btnToggle) {
         if (active) {
           btnToggle.innerHTML = `<span>🛑</span> Stop Gesture Camera`;
-          btnToggle.classList.replace('bg-purple-600', 'bg-red-600');
-          btnToggle.classList.replace('hover:bg-purple-700', 'hover:bg-red-700');
+          btnToggle.className = 'flex-1 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition cursor-pointer';
         } else {
           btnToggle.innerHTML = `<span>📷</span> Open Gesture Camera`;
-          btnToggle.classList.replace('bg-red-600', 'bg-purple-600');
-          btnToggle.classList.replace('hover:bg-red-700', 'hover:bg-purple-700');
+          btnToggle.className = 'flex-1 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-black text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition cursor-pointer';
         }
       }
 
       if (wrapper) {
-        if (active) wrapper.classList.remove('hidden');
-        else wrapper.classList.add('hidden');
+        if (active) {
+          wrapper.classList.remove('hidden');
+          wrapper.style.display = 'flex';
+        } else {
+          wrapper.classList.add('hidden');
+          wrapper.style.display = 'none';
+        }
       }
 
       if (hudStatus) {
         hudStatus.innerHTML = active
           ? `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> CAMERA ACTIVE`
           : `OFFLINE`;
+      }
+
+      if (hudGesture && !active) {
+        hudGesture.innerText = 'SHOW HAND SIGN (✋/✊/☝️/✌️)';
       }
     },
 
@@ -243,7 +388,7 @@
         const b = pixels[i + 2];
         const sum = r + g + b;
 
-        if (sum >= 75 && sum <= 730) {
+        if (sum >= 70 && sum <= 735) {
           const rn = r / (sum + 0.001);
           const gn = g / (sum + 0.001);
 
@@ -251,9 +396,9 @@
           const cr = (r - yLum) * 0.713 + 128;
           const cb = (b - yLum) * 0.564 + 128;
 
-          const isChromSkin = (rn >= 0.34 && rn <= 0.63 && gn >= 0.23 && gn <= 0.39);
-          const isYCrCbSkin = (cr >= 128 && cr <= 180 && cb >= 72 && cb <= 140);
-          const isRgbSkin = (r > 75 && g > 35 && b > 20 && r > g && r > b && (Math.max(r, g, b) - Math.min(r, g, b) > 12));
+          const isChromSkin = (rn >= 0.33 && rn <= 0.64 && gn >= 0.23 && gn <= 0.40);
+          const isYCrCbSkin = (cr >= 126 && cr <= 182 && cb >= 70 && cb <= 142);
+          const isRgbSkin = (r > 70 && g > 35 && b > 20 && r > g && r > b && (Math.max(r, g, b) - Math.min(r, g, b) > 10));
 
           if ((isChromSkin && isYCrCbSkin) || (isRgbSkin && (isChromSkin || isYCrCbSkin))) {
             const px = (i / 4) % sw;
@@ -299,16 +444,16 @@
           const g = pixels[idx + 1];
           const b = pixels[idx + 2];
           const sum = r + g + b;
-          if (sum >= 75 && sum <= 730) {
+          if (sum >= 70 && sum <= 735) {
             const rn = r / (sum + 0.001);
             const gn = g / (sum + 0.001);
             const yLum = 0.299 * r + 0.587 * g + 0.114 * b;
             const cr = (r - yLum) * 0.713 + 128;
             const cb = (b - yLum) * 0.564 + 128;
 
-            const isChromSkin = (rn >= 0.34 && rn <= 0.63 && gn >= 0.23 && gn <= 0.39);
-            const isYCrCbSkin = (cr >= 128 && cr <= 180 && cb >= 72 && cb <= 140);
-            const isRgbSkin = (r > 75 && g > 35 && b > 20 && r > g && r > b);
+            const isChromSkin = (rn >= 0.33 && rn <= 0.64 && gn >= 0.23 && gn <= 0.40);
+            const isYCrCbSkin = (cr >= 126 && cr <= 182 && cb >= 70 && cb <= 142);
+            const isRgbSkin = (r > 70 && g > 35 && b > 20 && r > g && r > b);
 
             if ((isChromSkin && isYCrCbSkin) || (isRgbSkin && (isChromSkin || isYCrCbSkin))) {
               highestSkinY = y;
@@ -340,7 +485,7 @@
         // Local crest pointing upwards (cur.y is smaller than surrounding)
         if (cur.y < topThreshold && cur.y <= prev.y && cur.y <= next.y) {
           const prominence = cy - cur.y;
-          if (prominence > boxH * 0.2) {
+          if (prominence > boxH * 0.18) {
             const isFarFromOtherPeaks = peaks.every(p => Math.abs(p.x - cur.x) > boxW * 0.11);
             if (isFarFromOtherPeaks) {
               peaks.push(cur);
@@ -513,6 +658,37 @@
       }
     },
 
+    // Instant Simulation / Interactive One-Tap Test
+    simulateGesture(gesture) {
+      if (isTriggerCooldown) return;
+
+      const wrapper = document.getElementById('gestureVideoWrapper');
+      if (wrapper && wrapper.classList.contains('hidden')) {
+        wrapper.classList.remove('hidden');
+        wrapper.style.display = 'flex';
+      }
+
+      if (simIntervalId) {
+        clearInterval(simIntervalId);
+        simIntervalId = null;
+      }
+
+      console.log(`🧪 Interactive test for hand sign: ${gesture}`);
+      let simStart = performance.now();
+      this.resetHoldState();
+
+      simIntervalId = setInterval(() => {
+        const now = performance.now();
+        const elapsed = now - simStart;
+        this.handleGestureDetection(gesture, null);
+
+        if (elapsed >= REQUIRED_HOLD_MS + 200 || isTriggerCooldown) {
+          clearInterval(simIntervalId);
+          simIntervalId = null;
+        }
+      }, 50);
+    },
+
     resetHoldState() {
       activeGesture = null;
       gestureStartTime = 0;
@@ -531,12 +707,12 @@
 
       const resetPill = (el) => {
         if (!el) return;
-        el.className = 'p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition';
+        el.className = 'p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100';
       };
 
       const highlightPill = (el) => {
         if (!el) return;
-        el.className = 'p-1.5 rounded-xl border-2 border-emerald-500 bg-emerald-100 text-emerald-950 font-black flex items-center justify-center gap-1 transition shadow-sm scale-105';
+        el.className = 'p-1.5 rounded-xl border-2 border-emerald-500 bg-emerald-100 text-emerald-950 font-black flex items-center justify-center gap-1 transition shadow-sm scale-105 cursor-pointer';
       };
 
       resetPill(pillPalm);
@@ -605,7 +781,7 @@
         }
         if (txt) txt.className = 'text-[10px] text-emerald-900 mt-2 font-medium';
         if (btnToggle && !isRunning) {
-          btnToggle.className = 'flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition active:scale-95';
+          btnToggle.className = 'flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition active:scale-95 cursor-pointer';
         }
       } else {
         if (container) container.className = 'mb-4 p-4 bg-purple-50/70 border-2 border-purple-400 rounded-2xl shadow-sm transition-all';
@@ -617,11 +793,18 @@
         }
         if (txt) txt.className = 'text-[10px] text-slate-500 mt-2 font-medium';
         if (btnToggle && !isRunning) {
-          btnToggle.className = 'flex-1 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition active:scale-95';
+          btnToggle.className = 'flex-1 bg-purple-600 hover:bg-purple-700 text-white font-black text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition active:scale-95 cursor-pointer';
         }
       }
     }
   };
+
+  // Auto-bind UI as soon as DOM is ready so clicks work immediately
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => GestureCamera.bindUi());
+  } else {
+    GestureCamera.bindUi();
+  }
 
   window.GestureCamera = GestureCamera;
 })(window);

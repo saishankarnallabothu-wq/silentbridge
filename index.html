@@ -463,26 +463,26 @@
 
           <!-- Supported Gestures Pills -->
           <div class="grid grid-cols-4 gap-1.5 mb-2.5 text-center text-[10px] font-mono font-bold">
-            <div id="gesturePillPalm" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition">
+            <button id="gesturePillPalm" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('palm')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test Palm sign">
               <span class="text-sm">✋</span> Palm
-            </div>
-            <div id="gesturePillFist" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition">
+            </button>
+            <button id="gesturePillFist" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('fist')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test Fist sign">
               <span class="text-sm">✊</span> Fist
-            </div>
-            <div id="gesturePillPoint" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition">
+            </button>
+            <button id="gesturePillPoint" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('pointing')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test Pointing sign">
               <span class="text-sm">☝️</span> Point
-            </div>
-            <div id="gesturePillV" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition">
+            </button>
+            <button id="gesturePillV" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('v_sign')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test V-Sign">
               <span class="text-sm">✌️</span> V-Sign
-            </div>
+            </button>
           </div>
 
           <!-- Camera Action Controls -->
           <div class="flex items-center gap-2 mb-2">
-            <button id="btnToggleGestureCamera" type="button" class="flex-1 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-black text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition">
+            <button id="btnToggleGestureCamera" type="button" onclick="window.GestureCamera && window.GestureCamera.toggle()" class="flex-1 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-black text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-sm transition cursor-pointer">
               <span>📷</span> Open Gesture Camera
             </button>
-            <button id="btnFlipCamera" type="button" class="hidden bg-white hover:bg-purple-100 border border-purple-300 text-purple-900 text-xs font-bold py-2.5 px-3 rounded-xl transition" title="Flip camera facing mode">
+            <button id="btnFlipCamera" type="button" onclick="window.GestureCamera && window.GestureCamera.flipCamera()" class="hidden bg-white hover:bg-purple-100 border border-purple-300 text-purple-900 text-xs font-bold py-2.5 px-3 rounded-xl transition cursor-pointer" title="Flip camera facing mode">
               🔄 Flip
             </button>
           </div>
@@ -784,18 +784,18 @@
     if ('caches' in window) {
       caches.keys().then(function(keys) {
         keys.forEach(function(k) {
-          if (k !== 'silentbridge-v30') caches.delete(k);
+          if (k !== 'silentbridge-v31') caches.delete(k);
         });
       });
     }
   </script>
   <!-- High-Precision 100% Offline Pure-JS Canvas Hand & Gesture Engine -->
-  <script src="crc16.js?v=30"></script>
-  <script src="packetEngine.js?v=30"></script>
-  <script src="paho-mqtt.js?v=30"></script>
-  <script src="meshBridge.js?v=30"></script>
-  <script src="audioModem.js?v=30"></script>
-  <script src="gestureCamera.js?v=30"></script>
-  <script src="app.js?v=30"></script>
+  <script src="crc16.js?v=31"></script>
+  <script src="packetEngine.js?v=31"></script>
+  <script src="paho-mqtt.js?v=31"></script>
+  <script src="meshBridge.js?v=31"></script>
+  <script src="audioModem.js?v=31"></script>
+  <script src="gestureCamera.js?v=31"></script>
+  <script src="app.js?v=31"></script>
 </body>
 </html>
