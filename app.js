@@ -2874,7 +2874,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Register Offline Service Worker for 100% No-Network Standalone Operation
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').then((reg) => {
+    navigator.serviceWorker.register('./sw.js?v=37').then((reg) => {
       console.log('SilentBridge Offline ServiceWorker active:', reg.scope);
       reg.update();
     }).catch((err) => {
