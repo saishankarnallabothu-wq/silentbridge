@@ -152,7 +152,7 @@ class SilentBridgeMesh {
     }
 
     try {
-      this.broadcastChannel = new BroadcastChannel(`silentbridge_mesh_${this.roomCode}`);
+      this.broadcastChannel = new BroadcastChannel('silentbridge_mesh_unified_bus');
       this.broadcastChannel.onmessage = (event) => {
         if (event.data) {
           this.handleIncoming(event.data, 'broadcast_channel');
@@ -170,7 +170,7 @@ class SilentBridgeMesh {
       return;
     }
 
-    const broker = this.activeBrokers[0]; // Unified primary broker across all devices
+    const broker = this.activeBrokers[this.currentBrokerIndex % this.activeBrokers.length];
     const clientId = `sb_${this.deviceId}_${Math.random().toString(36).substring(2, 6)}`;
 
     try {
@@ -179,6 +179,7 @@ class SilentBridgeMesh {
       this.mqttClient.onConnectionLost = (resp) => {
         this.cloudConnected = false;
         console.warn(`MQTT connection lost from ${broker.name}:`, resp.errorMessage);
+        this.currentBrokerIndex = (this.currentBrokerIndex + 1) % this.activeBrokers.length;
         this.notifyStatus('reconnecting', `Relay reconnecting (${resp.errorMessage || 'lost'})...`);
         setTimeout(() => this.initCloudMqtt(), 2000);
       };
@@ -223,12 +224,14 @@ class SilentBridgeMesh {
         onFailure: (err) => {
           this.cloudConnected = false;
           console.warn(`Failed to connect to ${broker.name}:`, err);
-          setTimeout(() => this.initCloudMqtt(), 3000);
+          this.currentBrokerIndex = (this.currentBrokerIndex + 1) % this.activeBrokers.length;
+          setTimeout(() => this.initCloudMqtt(), 2500);
         }
       });
     } catch (err) {
       console.warn("MQTT init error:", err);
-      setTimeout(() => this.initCloudMqtt(), 4000);
+      this.currentBrokerIndex = (this.currentBrokerIndex + 1) % this.activeBrokers.length;
+      setTimeout(() => this.initCloudMqtt(), 3500);
     }
   }
 
@@ -323,15 +326,15 @@ class SilentBridgeMesh {
     // 2. Cloud Mesh MQTT (Cross-Device across anywhere in the world)
     if (this.mqttClient && this.cloudConnected) {
       try {
-        // Support voice audio memos up to 48KB over WSS MQTT (safe for HiveMQ & EMQX broker WebSocket frames)
+        // Support voice audio memos up to 350KB over WSS MQTT (safe for HiveMQ & EMQX broker WebSocket frames)
         const mqttPacket = { ...packetObj };
-        if (mqttPacket.voiceAudio && mqttPacket.voiceAudio.length > 48000) {
-          console.warn("voiceAudio exceeds 48KB MQTT frame safety threshold, flagging hasVoice:", mqttPacket.voiceAudio.length);
+        if (mqttPacket.voiceAudio && mqttPacket.voiceAudio.length > 350000) {
+          console.warn("voiceAudio exceeds 350KB MQTT safety threshold, flagging hasVoice:", mqttPacket.voiceAudio.length);
           mqttPacket.hasVoice = true;
           mqttPacket.voiceAudio = null;
         }
-        if (mqttPacket.ackVoiceAudio && mqttPacket.ackVoiceAudio.length > 48000) {
-          console.warn("ackVoiceAudio exceeds 48KB MQTT frame safety threshold, flagging hasAckVoice:", mqttPacket.ackVoiceAudio.length);
+        if (mqttPacket.ackVoiceAudio && mqttPacket.ackVoiceAudio.length > 350000) {
+          console.warn("ackVoiceAudio exceeds 350KB MQTT safety threshold, flagging hasAckVoice:", mqttPacket.ackVoiceAudio.length);
           mqttPacket.hasAckVoice = true;
           mqttPacket.ackVoiceAudio = null;
         }
@@ -367,11 +370,30 @@ class SilentBridgeMesh {
     }
   }
 
+  broadcastPasscode(passcode) {
+    if (!passcode) return;
+    this.sendPacket({
+      type: 0xFC,
+      isPasscodeSync: true,
+      passcode: String(passcode),
+      timestamp: Date.now()
+    });
+  }
+
   handleIncoming(packetObj, transport) {
     if (!packetObj) return;
 
     // Reject echo packets sent by this exact device
     if (packetObj._senderDevice === this.deviceId) return;
+
+    // Universal Passcode synchronization (accepted across all roles, devices, and rooms)
+    if (packetObj.type === 0xFC || packetObj.isPasscodeSync || packetObj.type === 'PASSCODE_SYNC') {
+      console.log("🔐 MeshBridge: Passcode sync received from mesh peer:", packetObj.passcode);
+      if (this.onPacket) {
+        this.onPacket(packetObj, transport);
+      }
+      return;
+    }
 
     // Filter by room code:
     // - Receivers (Rescue HQ) accept packets from ALL rooms/areas!
@@ -391,16 +413,26 @@ class SilentBridgeMesh {
       return;
     }
 
-    // Deduplicate incoming SOS / ACK packets, BUT permit voice enrichment
+    // Deduplicate incoming SOS / ACK packets, BUT permit voice & refined GPS enrichment
     const packetKey = `${packetObj.msgId || '0'}_${packetObj.type}_${packetObj.isTest ? 'test' : 'sos'}`;
     const hasVoice = Boolean(packetObj.voiceAudio || packetObj.ackVoiceAudio);
     if (!this.seenPacketsWithVoice) this.seenPacketsWithVoice = new Set();
+    if (!this.lastKnownPackets) this.lastKnownPackets = new Map();
+
+    const prevPacket = this.lastKnownPackets.get(packetKey);
+    const hasGpsUpdate = Boolean(packetObj.lat && packetObj.lon && prevPacket && (
+      Math.abs(Number(packetObj.lat) - Number(prevPacket.lat)) > 0.000005 ||
+      Math.abs(Number(packetObj.lon) - Number(prevPacket.lon)) > 0.000005 ||
+      (packetObj.accuracy && prevPacket.accuracy && Number(packetObj.accuracy) < Number(prevPacket.accuracy))
+    ));
 
     if (this.seenPacketIds.has(packetKey)) {
-      // If previous packet arrived without voice, but this one has voice, forward it to app!
-      if (hasVoice && !this.seenPacketsWithVoice.has(packetKey)) {
-        this.seenPacketsWithVoice.add(packetKey);
-        console.log(`🎙️ MeshBridge: Passing voice-enriched packet #${packetObj.msgId} to application handler.`);
+      // If previous packet arrived without voice (or has new GPS fix), forward enriched update to app!
+      const shouldForwardEnrichment = (hasVoice && !this.seenPacketsWithVoice.has(packetKey)) || hasGpsUpdate || packetObj.isGpsUpdate;
+      if (shouldForwardEnrichment) {
+        if (hasVoice) this.seenPacketsWithVoice.add(packetKey);
+        this.lastKnownPackets.set(packetKey, packetObj);
+        console.log(`🎙️📍 MeshBridge: Passing enriched packet #${packetObj.msgId} (voice: ${hasVoice}, gpsUpdate: ${hasGpsUpdate}) to application handler.`);
         if (this.onPacket) {
           this.onPacket(packetObj, transport);
         }
@@ -409,6 +441,7 @@ class SilentBridgeMesh {
     }
 
     this.seenPacketIds.add(packetKey);
+    this.lastKnownPackets.set(packetKey, packetObj);
     if (hasVoice) {
       this.seenPacketsWithVoice.add(packetKey);
     }

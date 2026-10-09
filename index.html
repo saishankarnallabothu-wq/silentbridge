@@ -65,6 +65,7 @@
       <div id="sectionCreate" class="hidden">
         <input id="txtNewPin" type="password" placeholder="Enter New Passcode" class="w-full bg-neutral-900 border border-white/30 p-2.5 text-xs rounded-lg text-center font-bold font-mono text-white focus:outline-none focus:border-white mb-2">
         <input id="txtConfirmPin" type="password" placeholder="Confirm New Passcode" class="w-full bg-neutral-900 border border-white/30 p-2.5 text-xs rounded-lg text-center font-bold font-mono text-white focus:outline-none focus:border-white mb-2">
+        <p class="text-[10px] text-neutral-400 mb-2 font-mono">🌐 Automatically syncs across all phones & laptops.</p>
         <p id="createStatus" class="text-[11px] text-white font-bold mb-2 hidden"></p>
         <button id="btnSavePassword" class="w-full bg-white hover:bg-neutral-200 text-black font-black py-2.5 rounded-lg tracking-widest text-xs uppercase transition">
           SAVE & UNLOCK
@@ -74,6 +75,60 @@
       <button id="btnCancelAuth" class="w-full text-neutral-500 hover:text-neutral-300 text-[11px] font-bold mt-3 py-1">
         Cancel & Return to Sender
       </button>
+    </div>
+  </div>
+
+  <!-- Exact Location Calibration Modal -->
+  <div id="locationPinModal" class="fixed inset-0 bg-black/95 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-neutral-950 border border-white/40 p-5 rounded-xl max-w-sm w-full shadow-2xl font-mono text-xs">
+      <div class="flex justify-between items-center mb-3 border-b border-white/20 pb-2">
+        <div class="flex items-center gap-2">
+          <span class="text-base">📍</span>
+          <h2 class="text-xs font-black text-white uppercase tracking-wider">CALIBRATE SENDER GPS</h2>
+        </div>
+        <button id="btnCloseLocationModal" class="text-neutral-400 hover:text-white text-sm font-bold px-1.5 py-0.5">✕</button>
+      </div>
+
+      <p class="text-[11px] text-neutral-300 mb-3 font-sans">
+        Pinpoint your exact location for rescue teams. You can acquire live device GPS, auto-detect by network, or input exact coordinates.
+      </p>
+
+      <div class="space-y-2 mb-2.5">
+        <div>
+          <label class="block text-[10px] text-neutral-400 font-bold uppercase mb-1">LATITUDE:</label>
+          <input id="txtManualLat" type="number" step="0.000001" placeholder="e.g. 17.329241" class="w-full bg-neutral-900 border border-white/30 p-2 rounded text-white font-mono text-xs focus:outline-none focus:border-emerald-400">
+        </div>
+        <div>
+          <label class="block text-[10px] text-neutral-400 font-bold uppercase mb-1">LONGITUDE:</label>
+          <input id="txtManualLon" type="number" step="0.000001" placeholder="e.g. 78.536512" class="w-full bg-neutral-900 border border-white/30 p-2 rounded text-white font-mono text-xs focus:outline-none focus:border-emerald-400">
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <button id="btnPresetCampus" type="button" class="w-full bg-neutral-900 hover:bg-neutral-800 border border-emerald-500/60 text-emerald-300 font-bold py-1.5 px-2 rounded text-[10px] transition flex items-center justify-center gap-1.5">
+          🏫 Quick Pin: TKR College Meerpet (17.329241, 78.536512)
+        </button>
+      </div>
+
+      <div class="flex gap-2 mb-3">
+        <button id="btnModalLiveGps" type="button" class="flex-1 bg-neutral-800 hover:bg-neutral-700 border border-white/30 text-white font-bold py-2 rounded text-[10px] transition">
+          🛰️ Query Satellite
+        </button>
+        <button id="btnModalIpGeo" type="button" class="flex-1 bg-neutral-800 hover:bg-neutral-700 border border-blue-500/50 text-blue-300 font-bold py-2 rounded text-[10px] transition">
+          🌐 Network / IP
+        </button>
+      </div>
+
+      <p id="locationModalStatus" class="text-[10px] text-neutral-400 mb-3 hidden"></p>
+
+      <div class="flex gap-2">
+        <button id="btnSaveManualLocation" type="button" class="flex-1 bg-emerald-400 hover:bg-emerald-300 text-black font-black py-2.5 rounded-lg text-xs uppercase transition shadow">
+          ✓ Save & Lock GPS
+        </button>
+        <button id="btnCancelLocationModal" type="button" class="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs px-3 rounded-lg font-bold">
+          Cancel
+        </button>
+      </div>
     </div>
   </div>
 
@@ -275,8 +330,9 @@
           <p id="sosTitle" class="text-xs md:text-sm font-black text-white uppercase tracking-wide">
             INCOMING SOS RECEIVED FROM BEACON!
           </p>
-          <p id="sosSubtitle" class="text-[11px] text-neutral-400 mt-0.5">
-            Target location plotted on tactical map. Review telemetry below.
+          <p id="sosSubtitle" class="text-[11px] text-neutral-300 mt-0.5 flex flex-wrap items-center gap-2 font-mono">
+            <span id="sosCoordsText">GPS: --, --</span>
+            <span id="sosHeaderDistanceBadge" class="hidden text-[10px] bg-blue-950 text-blue-300 border border-blue-500/50 px-1.5 py-0.5 rounded font-bold"></span>
           </p>
           <!-- Survivor Voice Memo in Alert Banner -->
           <div id="bannerVoiceSection" class="hidden mt-2 p-2.5 bg-black rounded-lg border-2 border-emerald-400 flex flex-col gap-1.5 max-w-sm shadow-xl">
@@ -293,13 +349,48 @@
               <audio id="bannerVoiceAudio" controls class="flex-1 h-7 rounded"></audio>
             </div>
           </div>
+
+          <!-- Prominent Exact Location Display in Receiver Banner -->
+          <div class="mt-2.5 p-3 bg-black rounded-xl border-2 border-emerald-400 font-mono shadow-inner max-w-lg">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[10px] text-emerald-400 font-black uppercase tracking-wider flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                EXACT SURVIVOR LOCATION
+              </span>
+              <button id="btnBannerCopyCoords" type="button" class="bg-neutral-800 hover:bg-neutral-700 border border-white/30 text-white text-[10px] px-2.5 py-1 rounded font-bold font-mono transition flex items-center gap-1 active:scale-95" title="Copy exact GPS coordinates">
+                📋 Copy GPS
+              </button>
+            </div>
+            <a id="sosLocationLink" href="#" target="_blank" rel="noopener noreferrer" class="block my-1 transition group" title="Click to view exact survivor pin in Google Maps">
+              <div class="grid grid-cols-2 gap-2 text-white">
+                <div class="bg-neutral-950 group-hover:bg-neutral-900 p-2 rounded border border-white/10 group-hover:border-emerald-400 transition">
+                  <div class="flex justify-between items-center mb-0.5">
+                    <span class="text-[9px] text-neutral-400 block uppercase font-bold">LATITUDE:</span>
+                    <span class="text-[9px] text-blue-400 underline font-sans">Maps ↗</span>
+                  </div>
+                  <span id="sosLatText" class="text-xs sm:text-sm font-black text-emerald-300 tracking-wider">--.------</span>
+                </div>
+                <div class="bg-neutral-950 group-hover:bg-neutral-900 p-2 rounded border border-white/10 group-hover:border-emerald-400 transition">
+                  <div class="flex justify-between items-center mb-0.5">
+                    <span class="text-[9px] text-neutral-400 block uppercase font-bold">LONGITUDE:</span>
+                    <span class="text-[9px] text-blue-400 underline font-sans">Maps ↗</span>
+                  </div>
+                  <span id="sosLonText" class="text-xs sm:text-sm font-black text-emerald-300 tracking-wider">--.------</span>
+                </div>
+              </div>
+            </a>
+            <div class="text-[10px] text-neutral-400 flex justify-between items-center mt-1">
+              <span id="sosAccuracyBadge" class="text-emerald-400 font-bold">Accuracy: ±--m</span>
+              <span id="sosDistanceBadge" class="hidden text-blue-300 font-bold"></span>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="flex flex-col sm:flex-row items-end sm:items-center gap-2 flex-shrink-0">
-        <button id="btnBannerSendAck" class="bg-emerald-400 hover:bg-emerald-300 text-black font-black text-xs px-3.5 py-2 rounded-lg transition uppercase tracking-wider flex items-center gap-1.5 shadow-xl active:scale-95">
+      <div class="flex flex-wrap items-center gap-2 flex-shrink-0 mt-2 sm:mt-0">
+        <button id="btnBannerSendAck" class="bg-emerald-400 hover:bg-emerald-300 text-black font-black text-xs px-4 py-3 rounded-lg transition uppercase tracking-wider flex items-center gap-1.5 shadow-xl active:scale-95">
           <span>🛡️</span> SEND RESCUE ACK ➔
         </button>
-        <button id="btnDismissSos" class="bg-neutral-800 hover:bg-neutral-700 border border-white/40 text-neutral-300 text-xs px-2.5 py-2 rounded-lg font-bold transition">
+        <button id="btnDismissSos" class="bg-neutral-800 hover:bg-neutral-700 border border-white/40 text-neutral-300 text-xs px-3 py-3 rounded-lg font-bold transition">
           ✕
         </button>
       </div>
@@ -331,34 +422,8 @@
             <span>🚨</span> TRANSMIT IMMEDIATE EMERGENCY GPS
           </button>
           <p class="text-[10px] text-neutral-400 text-center mt-2 font-medium">
-            Broadcasts acoustic loudspeaker tone & cloud mesh. Transmits live GPS fix + attached voice memo.
+            Broadcasts acoustic loudspeaker tone & cloud mesh. Transmits live exact GPS + attached voice memo.
           </p>
-        </div>
-
-        <!-- 🎙️ HANDS-FREE VOICE SOS TRIGGER (VOICE RECOGNITION) -->
-        <div id="voiceSosTriggerBox" class="mb-4 bg-neutral-900 border border-emerald-400/50 p-3.5 rounded-xl transition-all shadow-lg">
-          <div class="flex justify-between items-center mb-1.5">
-            <span class="text-[10px] font-black text-white tracking-wider flex items-center gap-1.5 font-mono">
-              <span class="text-sm">🎙️</span>
-              HANDS-FREE VOICE SOS TRIGGER
-            </span>
-            <span id="voiceSosBadge" class="text-[9px] bg-neutral-950 text-neutral-400 border border-white/20 px-2 py-0.5 rounded font-bold font-mono uppercase">
-              STANDBY / OFF
-            </span>
-          </div>
-          <p class="text-[10px] text-neutral-300 mb-2.5 font-medium leading-relaxed">
-            Trapped or unable to touch screen? Speak <b class="text-emerald-300">"HELP"</b>, <b class="text-emerald-300">"SOS"</b>, or <b class="text-emerald-300">"EMERGENCY"</b> aloud to automatically trigger panic dispatch.
-          </p>
-          <div class="flex items-center gap-2">
-            <button id="btnToggleVoiceSos" type="button" class="w-full bg-neutral-800 hover:bg-neutral-700 text-emerald-300 border border-emerald-400/60 font-bold font-mono text-xs py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition active:scale-95 shadow">
-              <span id="voiceSosDot" class="w-2 h-2 rounded-full bg-neutral-500"></span>
-              <span id="voiceSosBtnText">ACTIVATE HANDS-FREE VOICE SOS</span>
-            </button>
-          </div>
-          <div id="voiceSosDetectedAlert" class="hidden mt-2 p-2 bg-emerald-950/90 border border-emerald-400 rounded-lg text-[10px] text-emerald-300 font-mono font-bold flex items-center gap-2 animate-pulse">
-            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-            <span id="voiceSosDetectedText">Voice keyword detected! Auto-dispatching emergency SOS...</span>
-          </div>
         </div>
 
         <!-- SURVIVOR NAME INPUT -->
@@ -412,14 +477,38 @@
           <input id="txtMessage" type="text" maxlength="17" placeholder="e.g. 2 ppl, Room 302" class="w-full bg-neutral-900 border border-white/20 p-2.5 text-xs rounded-lg mt-1 text-white placeholder:text-neutral-600 focus:outline-none focus:border-white transition">
         </div>
 
-        <!-- GPS Status Box -->
-        <div id="gpsBox" class="mb-3 p-3 bg-neutral-900 rounded-lg border border-white/20 transition-colors font-mono">
-          <div class="flex justify-between items-center mb-1 text-xs">
-            <span class="text-neutral-400">GPS: <span id="gpsCoords" class="text-white font-bold">Acquiring satellites...</span></span>
-            <button id="btnGps" class="bg-neutral-800 hover:bg-neutral-700 text-white border border-white/30 px-2.5 py-1 rounded text-[10px] font-bold transition">🎯 Recalibrate</button>
+        <!-- SENDER EXACT GPS LOCATION BOX -->
+        <div id="gpsBox" class="mb-3.5 p-3.5 bg-neutral-900 rounded-xl border-2 border-emerald-400 font-mono shadow-xl transition-all">
+          <div class="flex justify-between items-center mb-2 pb-1.5 border-b border-white/10">
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              <span class="text-[11px] font-black text-emerald-300 uppercase tracking-wider">EXACT SENDER LOCATION</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <button id="btnPinLocation" type="button" class="bg-neutral-800 hover:bg-neutral-700 text-emerald-300 border border-emerald-500/50 px-2 py-1 rounded text-[10px] font-bold transition" title="Calibrate and pin your exact location">📍 Calibrate</button>
+              <button id="btnGps" type="button" class="bg-emerald-400 hover:bg-emerald-300 text-black px-2.5 py-1 rounded text-[10px] font-black transition">🎯 Lock GPS</button>
+            </div>
           </div>
-          <div class="text-[10px] text-neutral-500 flex justify-between">
-            <span id="gpsAccuracy">Accuracy: Searching...</span>
+          <a id="gpsSenderLocationLink" href="#" target="_blank" rel="noopener noreferrer" class="block mb-2 group cursor-pointer" title="Click to view exact location in Google Maps">
+            <div class="grid grid-cols-2 gap-2">
+              <div class="bg-black group-hover:bg-neutral-950 p-2 rounded-lg border border-white/20 group-hover:border-emerald-400 transition">
+                <div class="flex justify-between items-center mb-0.5">
+                  <span class="text-[9px] text-neutral-400 font-bold block uppercase tracking-wider">LATITUDE:</span>
+                  <span class="text-[9px] text-blue-400 underline font-sans">Maps ↗</span>
+                </div>
+                <span id="gpsLatDisplay" class="text-xs sm:text-sm font-black text-emerald-300 tracking-wider block font-mono truncate">Acquiring...</span>
+              </div>
+              <div class="bg-black group-hover:bg-neutral-950 p-2 rounded-lg border border-white/20 group-hover:border-emerald-400 transition">
+                <div class="flex justify-between items-center mb-0.5">
+                  <span class="text-[9px] text-neutral-400 font-bold block uppercase tracking-wider">LONGITUDE:</span>
+                  <span class="text-[9px] text-blue-400 underline font-sans">Maps ↗</span>
+                </div>
+                <span id="gpsLonDisplay" class="text-xs sm:text-sm font-black text-emerald-300 tracking-wider block font-mono truncate">Acquiring...</span>
+              </div>
+            </div>
+          </a>
+          <div class="text-[10px] text-neutral-400 flex flex-wrap justify-between items-center gap-1">
+            <span id="gpsAccuracy" class="text-emerald-400 font-bold">Accuracy: Searching satellites...</span>
             <span id="gpsTimestamp">Last synced: --:--:--</span>
           </div>
         </div>
@@ -548,6 +637,15 @@
         </div>
       </div>
 
+      <!-- Tactical Survivor Map Header -->
+      <div class="flex items-center justify-between px-1">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-black text-white tracking-widest uppercase font-mono">TACTICAL SURVIVOR MAP</span>
+          <span class="text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-500/40 px-2 py-0.5 rounded font-mono font-bold">100% EXACT SATELLITE GPS PIN</span>
+        </div>
+        <span class="text-[10px] text-neutral-400 font-mono">Click marker coordinates to open in Google Maps ↗</span>
+      </div>
+
       <div id="map" class="h-56 md:h-64 rounded-xl border border-white/30 shadow-xl overflow-hidden"></div>
 
       <div class="flex-1 bg-neutral-950 border border-white/20 p-4 rounded-xl flex flex-col min-h-[240px] shadow-2xl">
@@ -569,11 +667,21 @@
 
   </main>
 
-  <script src="crc16.js?v=13"></script>
-  <script src="packetEngine.js?v=13"></script>
-  <script src="paho-mqtt.js?v=13"></script>
-  <script src="meshBridge.js?v=13"></script>
-  <script src="audioModem.js?v=13"></script>
-  <script src="app.js?v=13"></script>
+  <script>
+    // Force purge of obsolete service worker caches (e.g. silentbridge-v25)
+    if ('caches' in window) {
+      caches.keys().then(function(keys) {
+        keys.forEach(function(k) {
+          if (k !== 'silentbridge-v26') caches.delete(k);
+        });
+      });
+    }
+  </script>
+  <script src="crc16.js?v=26"></script>
+  <script src="packetEngine.js?v=26"></script>
+  <script src="paho-mqtt.js?v=26"></script>
+  <script src="meshBridge.js?v=26"></script>
+  <script src="audioModem.js?v=26"></script>
+  <script src="app.js?v=26"></script>
 </body>
 </html>

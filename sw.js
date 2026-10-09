@@ -1,5 +1,5 @@
-// sw.js - Offline Service Worker Cache
-const CACHE_NAME = 'silentbridge-v13';
+// sw.js - Offline Service Worker Cache (Network-First with Instant Updates)
+const CACHE_NAME = 'silentbridge-v26';
 const ASSETS = [
   './',
   './index.html',
@@ -23,7 +23,6 @@ self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS).then(() => {
-        // Opportunistically pre-cache external CDN libraries
         return Promise.allSettled(
           CDN_ASSETS.map((url) =>
             fetch(url, { mode: 'cors' }).then((res) => {
@@ -48,22 +47,26 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// Network-First: Always attempt to fetch the latest application updates from the server.
+// Fallback to offline cache ONLY when completely disconnected from network.
 self.addEventListener('fetch', (e) => {
   e.respondWith(
-    caches.match(e.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(e.request).then((networkRes) => {
+    fetch(e.request)
+      .then((networkRes) => {
         if (networkRes && networkRes.status === 200) {
           const toCache = networkRes.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(e.request, toCache));
         }
         return networkRes;
-      }).catch(() => {
-        if (e.request.mode === 'navigate') {
-          return caches.match('./index.html') || caches.match('./');
-        }
-        return cached;
-      });
-    })
+      })
+      .catch(() => {
+        return caches.match(e.request).then((cached) => {
+          if (cached) return cached;
+          if (e.request.mode === 'navigate') {
+            return caches.match('./index.html') || caches.match('./');
+          }
+          return null;
+        });
+      })
   );
 });

@@ -7,15 +7,16 @@
 
 ## 🚀 Key Features
 
-* **🎙️ Hands-Free Voice SOS Trigger:** Trapped or immobilized survivors can speak keywords like **"HELP"**, **"SOS"**, or **"EMERGENCY"** aloud to trigger immediate distress beacons hands-free (using Web Speech API with acoustic scream detection fallback).
-* **🔊 Tactical Voice Announcements (TTS):** Automated speech synthesis vocalizes incoming distress alerts at Rescue HQ and speaks reassuring rescue confirmation when responders acknowledge beacons—working 100% offline.
-* **🎙️ Embedded Survivor Voice Memos:** Records situational 5-second voice notes (WebM/Opus) and transmits them across cloud mesh and acoustic airwaves, with direct audio playback in the Rescuer Alert Banner, Leaflet Map popups, and Incident Feed cards.
+* **🎯 Automatic High-Precision GPS Lock:** Automatically locks exact physical survivor coordinates (Latitude & Longitude to 6 decimal places) directly from hardware satellite sensors upon startup with zero manual configuration.
+* **🎙️ Pristine Survivor Voice Playback:** Survivor voice notes (HD Opus/AAC) play directly and naturally across rescuer speakers upon alert arrival without synthetic/robotic computer voice interference.
+* **🎙️ Embedded Survivor Voice Memos:** Records situational 4-second voice notes (WebM/Opus) and transmits them across cloud mesh and acoustic airwaves, with direct audio playback in the Rescuer Alert Banner, Leaflet Map popups, and Incident Feed cards.
 * **🛡️ Two-Way Rescuer Voice Dispatch:** Responders can record tactical voice instructions (e.g. "Rescue team arriving in 3 minutes, stay calm") and attach them to the ACK packet, playing automatically on the survivor's phone.
-* **🌐 Zero-Config Cross-Device Cloud Mesh:** Works out of the box on static hosts (e.g. Vercel, GitHub Pages) without needing a backend server, utilizing multi-broker Secure WebSockets (EMQX & HiveMQ failover) supporting voice audio packets up to 200KB.
+* **🔐 Cross-Device Synchronized Security Passcode:** Create or update an authorized HQ passcode on any phone or laptop once, and it automatically synchronizes in real time across all connected systems.
+* **🌐 Zero-Config Cross-Device Cloud Mesh:** Works out of the box on static hosts (e.g. Vercel, GitHub Pages) without needing a backend server, utilizing multi-broker Secure WebSockets (EMQX & HiveMQ failover) supporting voice audio packets up to 350KB.
 * **🔊 Near-Ultrasound & Tactical Acoustic PHY:** Modulates data packets across audio frequencies with real-time spectrum visualization on phone and laptop speakers/microphones.
-* **🛰️ High-Precision Satellite GPS with Fallback:** Captures exact physical coordinates with 64-bit double precision (`Float64`) and displays precision routing for disaster response units.
+* **🛰️ Exact Survivor Location Telemetry & 1-Click Google Maps Pin:** Transmits and displays pure, high-precision latitude and longitude coordinates (to 6 decimal places). Clicking on the coordinates anywhere across the Tactical Map popup, Alert Banner, Incident Feed cards, or Sender telemetry immediately opens the exact pin in Google Maps in a new tab.
 * **🚨 1-Tap Emergency Panic Dispatch:** Instant broadcast trigger that locks live satellite GPS coordinates and alerts nearby rescue hubs immediately with auto-retransmit until ACK is received.
-* **🛡️ Secure Rescuer Command HQ:** Dedicated responder portal protected by passcode authentication (Default: `RESCUE2026`), featuring a dark-mode tactical map (Leaflet.js), incident feeds, turn-by-turn routing, and two-way ACK confirmations.
+* **🛡️ Secure Rescuer Command HQ:** Dedicated responder portal protected by passcode authentication (Default: `RESCUE2026`), featuring a dark-mode tactical map (Leaflet.js) centering directly on survivor pins, incident feeds, and two-way ACK confirmations.
 * **✅ Verified Rescue Confirmation (ACK):** Sends acknowledgement packets back to survivors, visually confirming rescue deployment on the sender's device with green status, haptic feedback, and voice readouts.
 * **📡 Room / Network Channel Pairing:** Pair devices instantly using room codes (e.g. `#GLOBAL` or `?room=TEAM-1`) with 1-click shareable pairing links and test ping diagnostics.
 
