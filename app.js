@@ -1777,20 +1777,23 @@ document.addEventListener("DOMContentLoaded", () => {
       onTrigger: async (gesture) => {
         console.log(`🚨 Hands-free gesture emergency trigger fired: [${gesture}]`);
         const gestureNames = {
+          palm: 'OPEN PALM (STOP SIGN)',
           fist: 'FIST (CLOSED HAND)',
           pointing: 'POINTING (INDEX FINGER)',
-          v_sign: 'V-SIGN (PEACE SIGN)'
+          v_sign: 'V-SIGN (PEACE SIGN)',
+          thumbs_up: 'THUMBS UP',
+          hand_sign: 'HAND SIGN'
         };
-        const gestureTitle = gestureNames[gesture] || `${gesture.toUpperCase()} GESTURE`;
+        const gestureTitle = gestureNames[gesture] || `${gesture.toUpperCase()} HAND SIGN`;
 
         // Immediate audible voice confirmation for survivor
-        TacticalSpeech.speak(`Emergency ${gesture} gesture detected! Transmitting live distress beacon to rescue team.`, true);
+        TacticalSpeech.speak(`Emergency hand sign detected! Transmitting live distress beacon to rescue team.`, true);
 
         // Automatically transfer distress beacon & GPS to Rescuer
         await executeSosDispatch({
           isPanic: true,
-          customNote: `GESTURE SOS: ${gesture.toUpperCase()} HELD 1.5S`,
-          customType: gesture === 'v_sign' ? 1 : (gesture === 'fist' ? 2 : 2)
+          customNote: `GESTURE SOS: ${gesture.toUpperCase()} HAND SIGN (HELD 1.5S)`,
+          customType: gesture === 'v_sign' ? 1 : 2
         });
       }
     });

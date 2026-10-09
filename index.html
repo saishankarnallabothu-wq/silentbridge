@@ -462,7 +462,10 @@
           </div>
 
           <!-- Supported Gestures Pills -->
-          <div class="grid grid-cols-3 gap-1.5 mb-2.5 text-center text-[10px] font-mono font-bold">
+          <div class="grid grid-cols-4 gap-1.5 mb-2.5 text-center text-[10px] font-mono font-bold">
+            <div id="gesturePillPalm" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition">
+              <span class="text-sm">✋</span> Palm
+            </div>
             <div id="gesturePillFist" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition">
               <span class="text-sm">✊</span> Fist
             </div>
@@ -495,7 +498,7 @@
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> CAMERA ACTIVE
               </span>
               <span id="hudDetectedGesture" class="bg-purple-600/90 backdrop-blur-md text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg border border-purple-300">
-                SHOW ✊ / ☝️ / ✌️
+                SHOW HAND SIGN (✋/✊/☝️/✌️)
               </span>
             </div>
 
@@ -507,12 +510,12 @@
                   <circle id="hudHoldSvgRing" cx="36" cy="36" r="30" stroke="#a855f7" stroke-width="6" fill="transparent" stroke-dasharray="188.5" stroke-dashoffset="188.5" stroke-linecap="round" class="transition-all duration-75" />
                 </svg>
                 <div class="absolute inset-0 flex flex-col items-center justify-center text-white">
-                  <span id="hudHoldEmoji" class="text-xl">✌️</span>
+                  <span id="hudHoldEmoji" class="text-xl">✋</span>
                   <span id="hudHoldSecondsText" class="text-xs font-mono font-black">1.5s</span>
                 </div>
               </div>
               <span id="hudHoldLabel" class="text-[11px] font-black text-white mt-1.5 font-mono uppercase tracking-wider drop-shadow">
-                HOLD GESTURE STEADY...
+                HOLD HAND SIGN STEADY...
               </span>
             </div>
 
@@ -522,16 +525,16 @@
                 ✓
               </div>
               <span class="text-sm font-black text-white uppercase font-mono tracking-widest text-center px-2">
-                GESTURE SOS TRIGGERED!
+                HAND SIGN SOS TRIGGERED!
               </span>
               <span class="text-[11px] text-white/95 font-mono mt-0.5 text-center px-2">
-                Live GPS & Audio transferred to Rescuer
+                Live GPS & Alert automatically sent to Receiver
               </span>
             </div>
           </div>
 
           <p id="txtGestureInstruction" class="text-[10px] text-slate-500 mt-2 font-medium">
-            Hold a ✊ Fist, ☝️ Pointing finger, or ✌️ V-Sign for 1.5s in camera view. Once captured, your distress message & live GPS will automatically transfer to the rescuer.
+            Show any hand sign (✋ Palm, ✊ Fist, ☝️ Point, ✌️ V-Sign) and hold for 1.5s. When captured, it automatically sends an emergency alert & live GPS to the receiver.
           </p>
         </div>
 
@@ -781,20 +784,18 @@
     if ('caches' in window) {
       caches.keys().then(function(keys) {
         keys.forEach(function(k) {
-          if (k !== 'silentbridge-v29') caches.delete(k);
+          if (k !== 'silentbridge-v30') caches.delete(k);
         });
       });
     }
   </script>
-  <!-- MediaPipe Hands & Camera Utils for Advanced 3D Landmark Tracking -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-  <script src="crc16.js?v=29"></script>
-  <script src="packetEngine.js?v=29"></script>
-  <script src="paho-mqtt.js?v=29"></script>
-  <script src="meshBridge.js?v=29"></script>
-  <script src="audioModem.js?v=29"></script>
-  <script src="gestureCamera.js?v=29"></script>
-  <script src="app.js?v=29"></script>
+  <!-- High-Precision 100% Offline Pure-JS Canvas Hand & Gesture Engine -->
+  <script src="crc16.js?v=30"></script>
+  <script src="packetEngine.js?v=30"></script>
+  <script src="paho-mqtt.js?v=30"></script>
+  <script src="meshBridge.js?v=30"></script>
+  <script src="audioModem.js?v=30"></script>
+  <script src="gestureCamera.js?v=30"></script>
+  <script src="app.js?v=30"></script>
 </body>
 </html>

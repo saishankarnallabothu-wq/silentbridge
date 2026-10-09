@@ -1,30 +1,41 @@
-// gestureCamera.js - Hands-Free Emergency Gesture SOS Trigger (SilentBridge)
-// Detects ✊ Fist, ☝️ Pointing, or ✌️ V-Sign held continuously for 1.5 seconds.
-// Dual-Engine: MediaPipe Hands with built-in 100% offline Pure-JS Canvas Computer Vision.
+// gestureCamera.js - High-Precision Hands-Free Hand Sign SOS Camera (SilentBridge)
+// 100% Offline Pure-JS Canvas Computer Vision.
+// Detects ANY Hand Sign: ✋ Open Palm, ✊ Fist, ☝️ Pointing, ✌️ V-Sign, 👍 Thumbs Up, or 🖐️ Hand Sign.
+// Holding any hand sign steadily for 1.5s automatically dispatches the emergency SOS to the receiver.
 
 (function (window) {
   'use strict';
 
   const GESTURE_TYPES = {
+    PALM: 'palm',
     FIST: 'fist',
     POINTING: 'pointing',
-    V_SIGN: 'v_sign'
+    V_SIGN: 'v_sign',
+    THUMBS_UP: 'thumbs_up',
+    HAND_SIGN: 'hand_sign'
   };
 
   const GESTURE_EMOJIS = {
+    palm: '✋',
     fist: '✊',
     pointing: '☝️',
-    v_sign: '✌️'
+    v_sign: '✌️',
+    thumbs_up: '👍',
+    hand_sign: '🖐️'
   };
 
   const GESTURE_LABELS = {
+    palm: 'OPEN PALM (HOLD 1.5s)',
     fist: 'FIST (HOLD 1.5s)',
     pointing: 'POINTING (HOLD 1.5s)',
-    v_sign: 'V-SIGN (HOLD 1.5s)'
+    v_sign: 'V-SIGN (HOLD 1.5s)',
+    thumbs_up: 'THUMBS UP (HOLD 1.5s)',
+    hand_sign: 'HAND SIGN (HOLD 1.5s)'
   };
 
-  const REQUIRED_HOLD_MS = 1500; // 1.5 seconds hold threshold
-  const COOLDOWN_MS = 6000;      // 6 seconds cooldown after dispatch
+  const REQUIRED_HOLD_MS = 1500;  // 1.5 seconds steady hold
+  const GRACE_PERIOD_MS = 380;   // 380ms grace window to prevent micro-flicker resets
+  const COOLDOWN_MS = 5000;       // 5 seconds cooldown after alert dispatch
 
   let videoEl = null;
   let canvasOverlay = null;
@@ -36,16 +47,12 @@
   let currentFacingMode = 'user'; // 'user' or 'environment'
   let animationFrameId = null;
 
-  // Gesture Tracking State
+  // Hand Tracking & Hold State
   let activeGesture = null;
   let gestureStartTime = 0;
   let lastDetectedTimestamp = 0;
   let isTriggerCooldown = false;
   let onSosTriggerCallback = null;
-
-  // MediaPipe Hands Instance (if CDN loads)
-  let mpHands = null;
-  let isMpReady = false;
 
   const GestureCamera = {
     init(options = {}) {
@@ -57,14 +64,11 @@
         ctxOverlay = canvasOverlay.getContext('2d');
       }
 
-      // Offscreen canvas for fast native pixel computer vision
+      // Fast offscreen canvas for high-performance pixel-level computer vision
       offscreenCanvas = document.createElement('canvas');
       offscreenCanvas.width = 160;
       offscreenCanvas.height = 120;
       offscreenCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
-
-      // Initialize MediaPipe Hands gracefully if available
-      this.initMediaPipe();
 
       // Setup UI Listeners
       const btnToggle = document.getElementById('btnToggleGestureCamera');
@@ -76,28 +80,8 @@
       if (btnFlip) {
         btnFlip.addEventListener('click', () => this.flipCamera());
       }
-    },
 
-    initMediaPipe() {
-      if (typeof window.Hands !== 'undefined') {
-        try {
-          mpHands = new window.Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-          });
-          mpHands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 0, // 0 for ultra-fast performance on mobile
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-          });
-          mpHands.onResults((results) => this.handleMediaPipeResults(results));
-          isMpReady = true;
-          console.log('🤖 MediaPipe Hands engine initialized.');
-        } catch (e) {
-          console.warn('MediaPipe init note, using native Canvas Vision:', e);
-          isMpReady = false;
-        }
-      }
+      console.log('📷 SilentBridge Hand Sign SOS Engine Initialized (100% Offline Canvas Vision).');
     },
 
     async start() {
@@ -125,12 +109,27 @@
         const btnFlip = document.getElementById('btnFlipCamera');
         if (btnFlip) btnFlip.classList.remove('hidden');
 
-        // Start processing loop
+        // Start real-time detection loop
         this.processFrame();
       } catch (err) {
-        console.error('Gesture camera start error:', err);
-        alert('Could not open camera for gesture detection: ' + (err.message || 'Permission denied'));
-        this.updateUiState(false);
+        console.error('Camera open error:', err);
+        // Try fallback with minimal constraints
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          if (!videoEl) videoEl = document.getElementById('gestureVideo');
+          if (videoEl) {
+            videoEl.srcObject = stream;
+            await videoEl.play();
+          }
+          isRunning = true;
+          this.updateUiState(true);
+          const btnFlip = document.getElementById('btnFlipCamera');
+          if (btnFlip) btnFlip.classList.remove('hidden');
+          this.processFrame();
+        } catch (fallbackErr) {
+          alert('Could not open camera. Please grant camera permission in your browser: ' + (fallbackErr.message || 'Permission denied'));
+          this.updateUiState(false);
+        }
       }
     },
 
@@ -206,31 +205,23 @@
     processFrame() {
       if (!isRunning) return;
 
-      if (videoEl && videoEl.readyState >= 2) {
+      if (videoEl && videoEl.readyState >= 2 && videoEl.videoWidth > 0) {
         if (canvasOverlay && (canvasOverlay.width !== videoEl.videoWidth || canvasOverlay.height !== videoEl.videoHeight)) {
           canvasOverlay.width = videoEl.videoWidth || 640;
           canvasOverlay.height = videoEl.videoHeight || 480;
         }
 
-        if (isMpReady && mpHands) {
-          try {
-            mpHands.send({ image: videoEl }).catch(() => {
-              this.fallbackNativeVision();
-            });
-          } catch (e) {
-            this.fallbackNativeVision();
-          }
-        } else {
-          this.fallbackNativeVision();
-        }
+        // Run Pure-JS Canvas Computer Vision Hand Analyzer
+        this.detectHandFromCanvas();
       }
 
       animationFrameId = requestAnimationFrame(() => this.processFrame());
     },
 
-    // 1. Built-in Pure-JS Canvas Computer Vision Hand & Finger Analyzer
-    // 100% Offline with zero external dependencies.
-    fallbackNativeVision() {
+    // =========================================================================
+    // 🧠 Pure-JS High-Precision Canvas Hand Sign Recognition Engine
+    // =========================================================================
+    detectHandFromCanvas() {
       if (!videoEl || !offscreenCtx) return;
 
       const sw = offscreenCanvas.width;
@@ -244,34 +235,47 @@
       let sumY = 0;
       let minX = sw, maxX = 0, minY = sh, maxY = 0;
 
-      // YCrCb Skin Tone Segmentation
+      // 1. Dual-Space Illumination-Invariant Skin Tone Filter
+      // (Normalized RGB Chromaticity + YCrCb + RGB Contrast)
       for (let i = 0; i < pixels.length; i += 4) {
         const r = pixels[i];
         const g = pixels[i + 1];
         const b = pixels[i + 2];
+        const sum = r + g + b;
 
-        const y = 0.299 * r + 0.587 * g + 0.114 * b;
-        const cr = (r - y) * 0.713 + 128;
-        const cb = (b - y) * 0.564 + 128;
+        if (sum >= 75 && sum <= 730) {
+          const rn = r / (sum + 0.001);
+          const gn = g / (sum + 0.001);
 
-        if (cr >= 133 && cr <= 173 && cb >= 77 && cb <= 127 && r > 65 && g > 40) {
-          const px = (i / 4) % sw;
-          const py = Math.floor((i / 4) / sw);
+          const yLum = 0.299 * r + 0.587 * g + 0.114 * b;
+          const cr = (r - yLum) * 0.713 + 128;
+          const cb = (b - yLum) * 0.564 + 128;
 
-          skinCount++;
-          sumX += px;
-          sumY += py;
-          if (px < minX) minX = px;
-          if (px > maxX) maxX = px;
-          if (py < minY) minY = py;
-          if (py > maxY) maxY = py;
+          const isChromSkin = (rn >= 0.34 && rn <= 0.63 && gn >= 0.23 && gn <= 0.39);
+          const isYCrCbSkin = (cr >= 128 && cr <= 180 && cb >= 72 && cb <= 140);
+          const isRgbSkin = (r > 75 && g > 35 && b > 20 && r > g && r > b && (Math.max(r, g, b) - Math.min(r, g, b) > 12));
+
+          if ((isChromSkin && isYCrCbSkin) || (isRgbSkin && (isChromSkin || isYCrCbSkin))) {
+            const px = (i / 4) % sw;
+            const py = Math.floor((i / 4) / sw);
+
+            skinCount++;
+            sumX += px;
+            sumY += py;
+            if (px < minX) minX = px;
+            if (px > maxX) maxX = px;
+            if (py < minY) minY = py;
+            if (py > maxY) maxY = py;
+          }
         }
       }
 
-      // Check if enough skin mass is present (at least 2.5% of frame)
-      const minPixels = sw * sh * 0.025;
-      if (skinCount < minPixels) {
-        this.handleGestureDetection(null);
+      // Check if minimum skin area is present (between 1.5% and 55% of frame)
+      const minPixels = sw * sh * 0.015;
+      const maxPixels = sw * sh * 0.55;
+
+      if (skinCount < minPixels || skinCount > maxPixels) {
+        this.handleGestureDetection(null, null);
         if (ctxOverlay && canvasOverlay) {
           ctxOverlay.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
         }
@@ -280,158 +284,173 @@
 
       const cx = sumX / skinCount;
       const cy = sumY / skinCount;
-      const boxW = maxX - minX;
-      const boxH = maxY - minY;
+      const boxW = Math.max(1, maxX - minX);
+      const boxH = Math.max(1, maxY - minY);
 
-      // Analyze finger peaks extending above centroid (y < cy)
-      const topCutoff = cy - boxH * 0.05;
-      const colStep = 4;
+      // 2. Scan Vertical Columns to Extract Upper Hand Silhouette
+      const colStep = 2;
       const topProfile = [];
 
       for (let x = minX; x <= maxX; x += colStep) {
         let highestSkinY = sh;
-        for (let y = minY; y <= cy; y++) {
+        for (let y = minY; y <= cy + boxH * 0.15; y++) {
           const idx = (y * sw + x) * 4;
-          const r = pixels[idx], g = pixels[idx + 1], b = pixels[idx + 2];
-          const yVal = 0.299 * r + 0.587 * g + 0.114 * b;
-          const cr = (r - yVal) * 0.713 + 128;
-          const cb = (b - yVal) * 0.564 + 128;
+          const r = pixels[idx];
+          const g = pixels[idx + 1];
+          const b = pixels[idx + 2];
+          const sum = r + g + b;
+          if (sum >= 75 && sum <= 730) {
+            const rn = r / (sum + 0.001);
+            const gn = g / (sum + 0.001);
+            const yLum = 0.299 * r + 0.587 * g + 0.114 * b;
+            const cr = (r - yLum) * 0.713 + 128;
+            const cb = (b - yLum) * 0.564 + 128;
 
-          if (cr >= 133 && cr <= 173 && cb >= 77 && cb <= 127) {
-            highestSkinY = y;
-            break;
+            const isChromSkin = (rn >= 0.34 && rn <= 0.63 && gn >= 0.23 && gn <= 0.39);
+            const isYCrCbSkin = (cr >= 128 && cr <= 180 && cb >= 72 && cb <= 140);
+            const isRgbSkin = (r > 75 && g > 35 && b > 20 && r > g && r > b);
+
+            if ((isChromSkin && isYCrCbSkin) || (isRgbSkin && (isChromSkin || isYCrCbSkin))) {
+              highestSkinY = y;
+              break;
+            }
           }
         }
         topProfile.push({ x, y: highestSkinY });
       }
 
-      // Count peaks that protrude upwards significantly
-      const peaks = [];
-      for (let i = 1; i < topProfile.length - 1; i++) {
-        const cur = topProfile[i];
-        const prev = topProfile[i - 1];
-        const next = topProfile[i + 1];
+      // Smooth silhouette with 3-point moving average
+      const smoothedProfile = [];
+      for (let i = 0; i < topProfile.length; i++) {
+        const prev = topProfile[Math.max(0, i - 1)].y;
+        const cur = topProfile[i].y;
+        const next = topProfile[Math.min(topProfile.length - 1, i + 1)].y;
+        smoothedProfile.push({ x: topProfile[i].x, y: (prev + cur * 2 + next) / 4 });
+      }
 
-        if (cur.y < topCutoff && cur.y <= prev.y && cur.y <= next.y) {
-          // Significant prominence
+      // 3. Detect Protruding Finger Peaks
+      const peaks = [];
+      const topThreshold = cy - boxH * 0.12;
+
+      for (let i = 1; i < smoothedProfile.length - 1; i++) {
+        const cur = smoothedProfile[i];
+        const prev = smoothedProfile[i - 1];
+        const next = smoothedProfile[i + 1];
+
+        // Local crest pointing upwards (cur.y is smaller than surrounding)
+        if (cur.y < topThreshold && cur.y <= prev.y && cur.y <= next.y) {
           const prominence = cy - cur.y;
-          if (prominence > boxH * 0.35) {
-            const isFarFromExisting = peaks.every(p => Math.abs(p.x - cur.x) > boxW * 0.18);
-            if (isFarFromExisting) {
+          if (prominence > boxH * 0.2) {
+            const isFarFromOtherPeaks = peaks.every(p => Math.abs(p.x - cur.x) > boxW * 0.11);
+            if (isFarFromOtherPeaks) {
               peaks.push(cur);
             }
           }
         }
       }
 
-      // Gesture Classification:
+      // 4. Classify ANY Hand Sign
       let detected = null;
-      if (peaks.length === 0) {
-        // Compact blob with no fingers sticking out -> Fist
-        const aspectRatio = boxW / Math.max(1, boxH);
-        if (aspectRatio > 0.6 && aspectRatio < 1.4) {
-          detected = GESTURE_TYPES.FIST;
-        }
-      } else if (peaks.length === 1) {
-        // Single extended finger -> Pointing
-        detected = GESTURE_TYPES.POINTING;
-      } else if (peaks.length === 2) {
-        // Two extended fingers with gap -> V-Sign
+      const numPeaks = peaks.length;
+      const aspectRatio = boxW / boxH;
+
+      if (numPeaks >= 4) {
+        // 4 or 5 extended fingers -> Open Palm / Stop Sign
+        detected = GESTURE_TYPES.PALM;
+      } else if (numPeaks === 3) {
+        // 3 extended fingers -> Palm or Tri-Sign
+        detected = GESTURE_TYPES.PALM;
+      } else if (numPeaks === 2) {
+        // 2 extended fingers -> V-Sign / Peace Sign
         detected = GESTURE_TYPES.V_SIGN;
+      } else if (numPeaks === 1) {
+        // 1 extended finger -> Pointing or Thumbs Up
+        const peak = peaks[0];
+        const isNearEdge = (peak.x - minX < boxW * 0.25) || (maxX - peak.x < boxW * 0.25);
+        if (isNearEdge && aspectRatio > 0.8) {
+          detected = GESTURE_TYPES.THUMBS_UP;
+        } else {
+          detected = GESTURE_TYPES.POINTING;
+        }
+      } else if (numPeaks === 0) {
+        // No protruding fingers -> Fist (compact blob)
+        if (aspectRatio >= 0.55 && aspectRatio <= 1.5) {
+          detected = GESTURE_TYPES.FIST;
+        } else {
+          // General Hand Sign
+          detected = GESTURE_TYPES.HAND_SIGN;
+        }
+      } else {
+        detected = GESTURE_TYPES.HAND_SIGN;
       }
 
-      // Render Visual Skeleton / Bounding Box on Canvas Overlay
+      // 5. Draw HUD Bounding Box, Skeleton & Finger Markers on Canvas
       if (ctxOverlay && canvasOverlay) {
         ctxOverlay.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
         const scaleX = canvasOverlay.width / sw;
         const scaleY = canvasOverlay.height / sh;
 
+        const bx = minX * scaleX;
+        const by = minY * scaleY;
+        const bw = boxW * scaleX;
+        const bh = boxH * scaleY;
+
+        // Draw Bounding Box
+        ctxOverlay.save();
         ctxOverlay.strokeStyle = detected ? '#10b981' : '#a855f7';
         ctxOverlay.lineWidth = 3;
-        ctxOverlay.strokeRect(minX * scaleX, minY * scaleY, boxW * scaleX, boxH * scaleY);
+        ctxOverlay.strokeRect(bx, by, bw, bh);
 
-        // Draw centroid
+        // Draw Centroid / Palm Core
         ctxOverlay.fillStyle = '#ec4899';
         ctxOverlay.beginPath();
-        ctxOverlay.arc(cx * scaleX, cy * scaleY, 6, 0, 2 * Math.PI);
+        ctxOverlay.arc(cx * scaleX, cy * scaleY, 7, 0, 2 * Math.PI);
         ctxOverlay.fill();
 
-        // Draw detected finger peaks
+        // Draw Skeleton Lines and Finger Tips
         peaks.forEach(p => {
+          ctxOverlay.strokeStyle = '#10b981';
+          ctxOverlay.lineWidth = 2.5;
+          ctxOverlay.beginPath();
+          ctxOverlay.moveTo(cx * scaleX, cy * scaleY);
+          ctxOverlay.lineTo(p.x * scaleX, p.y * scaleY);
+          ctxOverlay.stroke();
+
           ctxOverlay.fillStyle = '#10b981';
           ctxOverlay.beginPath();
           ctxOverlay.arc(p.x * scaleX, p.y * scaleY, 8, 0, 2 * Math.PI);
           ctxOverlay.fill();
+
+          ctxOverlay.fillStyle = '#ffffff';
+          ctxOverlay.beginPath();
+          ctxOverlay.arc(p.x * scaleX, p.y * scaleY, 3, 0, 2 * Math.PI);
+          ctxOverlay.fill();
         });
-      }
 
-      this.handleGestureDetection(detected);
-    },
+        // Draw Label Tag above Bounding Box
+        if (detected) {
+          const labelText = `${GESTURE_EMOJIS[detected] || '🖐️'} ${detected.toUpperCase()}`;
+          ctxOverlay.font = 'bold 14px monospace';
+          const textW = ctxOverlay.measureText(labelText).width;
+          const tagX = Math.max(10, bx + (bw - textW) / 2);
+          const tagY = Math.max(24, by - 10);
 
-    // 2. MediaPipe Hands Landmark Parser (When CDN is ready)
-    handleMediaPipeResults(results) {
-      if (!ctxOverlay || !canvasOverlay) return;
-      ctxOverlay.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
+          ctxOverlay.fillStyle = 'rgba(16, 185, 129, 0.9)';
+          ctxOverlay.fillRect(tagX - 8, tagY - 18, textW + 16, 24);
 
-      if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-        this.handleGestureDetection(null);
-        return;
-      }
-
-      const landmarks = results.multiHandLandmarks[0];
-      const w = canvasOverlay.width;
-      const h = canvasOverlay.height;
-
-      // Finger Extension States (landmarks y-axis: 0 is top, 1 is bottom)
-      const isIndexExtended = landmarks[8].y < landmarks[6].y;
-      const isMiddleExtended = landmarks[12].y < landmarks[10].y;
-      const isRingExtended = landmarks[16].y < landmarks[14].y;
-      const isPinkyExtended = landmarks[20].y < landmarks[18].y;
-
-      let detected = null;
-      if (!isIndexExtended && !isMiddleExtended && !isRingExtended && !isPinkyExtended) {
-        detected = GESTURE_TYPES.FIST;
-      } else if (isIndexExtended && !isMiddleExtended && !isRingExtended && !isPinkyExtended) {
-        detected = GESTURE_TYPES.POINTING;
-      } else if (isIndexExtended && isMiddleExtended && !isRingExtended && !isPinkyExtended) {
-        const fingerDist = Math.hypot(landmarks[8].x - landmarks[12].x, landmarks[8].y - landmarks[12].y);
-        if (fingerDist > 0.035) {
-          detected = GESTURE_TYPES.V_SIGN;
+          ctxOverlay.fillStyle = '#ffffff';
+          ctxOverlay.fillText(labelText, tagX, tagY - 1);
         }
+        ctxOverlay.restore();
       }
 
-      // Draw skeleton lines
-      ctxOverlay.lineWidth = 3;
-      ctxOverlay.strokeStyle = detected ? '#10b981' : '#a855f7';
-
-      const connections = [
-        [0, 1], [1, 2], [2, 3], [3, 4], // Thumb
-        [0, 5], [5, 6], [6, 7], [7, 8], // Index
-        [0, 9], [9, 10], [10, 11], [11, 12], // Middle
-        [0, 13], [13, 14], [14, 15], [15, 16], // Ring
-        [0, 17], [17, 18], [18, 19], [19, 20] // Pinky
-      ];
-
-      connections.forEach(([p1, p2]) => {
-        ctxOverlay.beginPath();
-        ctxOverlay.moveTo(landmarks[p1].x * w, landmarks[p1].y * h);
-        ctxOverlay.lineTo(landmarks[p2].x * w, landmarks[p2].y * h);
-        ctxOverlay.stroke();
-      });
-
-      // Draw Joint points
-      landmarks.forEach((pt, index) => {
-        ctxOverlay.fillStyle = [4, 8, 12, 16, 20].includes(index) ? '#10b981' : '#f43f5e';
-        ctxOverlay.beginPath();
-        ctxOverlay.arc(pt.x * w, pt.y * h, [4, 8, 12, 16, 20].includes(index) ? 6 : 4, 0, 2 * Math.PI);
-        ctxOverlay.fill();
-      });
-
-      this.handleGestureDetection(detected);
+      this.handleGestureDetection(detected, { cx, cy, boxW, boxH, peaks });
     },
 
-    // 3. Centralized 1.5s Continuous Hold State Machine
-    handleGestureDetection(detected) {
+    // =========================================================================
+    // ⏱️ 1.5-Second Continuous Steady Hold State Machine
+    // =========================================================================
+    handleGestureDetection(detected, handData) {
       const now = performance.now();
       const hudGesture = document.getElementById('hudDetectedGesture');
       const holdContainer = document.getElementById('hudHoldCountdownContainer');
@@ -450,44 +469,46 @@
 
       if (detected) {
         lastDetectedTimestamp = now;
+        const emoji = GESTURE_EMOJIS[detected] || '🖐️';
+
         if (hudGesture) {
-          hudGesture.innerText = `${GESTURE_EMOJIS[detected]} ${detected.toUpperCase()}`;
+          hudGesture.innerText = `${emoji} ${detected.toUpperCase()}`;
         }
 
-        if (activeGesture === detected) {
-          // Continues holding the same gesture
+        // Check if user is holding any valid hand sign
+        if (activeGesture) {
           const elapsed = now - gestureStartTime;
           const progress = Math.min(1.0, elapsed / REQUIRED_HOLD_MS);
           const remainingSec = Math.max(0, (REQUIRED_HOLD_MS - elapsed) / 1000).toFixed(1);
 
           if (holdContainer) holdContainer.classList.remove('hidden');
-          if (holdEmoji) holdEmoji.innerText = GESTURE_EMOJIS[detected];
+          if (holdEmoji) holdEmoji.innerText = emoji;
           if (holdSeconds) holdSeconds.innerText = `${remainingSec}s`;
-          if (holdLabel) holdLabel.innerText = `HOLD ${detected.toUpperCase()} STEADY`;
+          if (holdLabel) holdLabel.innerText = `HOLD ${detected.toUpperCase()} (1.5s TO SEND SOS)`;
 
           if (svgRing) {
             const circumference = 188.5; // 2 * PI * r (30)
             const offset = circumference * (1 - progress);
             svgRing.style.strokeDashoffset = offset;
-            svgRing.style.stroke = progress > 0.8 ? '#10b981' : '#a855f7';
+            svgRing.style.stroke = progress > 0.75 ? '#10b981' : '#a855f7';
           }
 
           if (elapsed >= REQUIRED_HOLD_MS) {
-            // 🎯 TRIGGER CRITICAL EMERGENCY SOS
+            // 🎯 TRIGGER CRITICAL EMERGENCY SOS TRANSMISSION
             this.triggerEmergencySos(detected);
           }
         } else {
-          // New gesture detected, start fresh 1.5s timer
+          // Started holding a hand sign
           activeGesture = detected;
           gestureStartTime = now;
           if (holdContainer) holdContainer.classList.remove('hidden');
           if (svgRing) svgRing.style.strokeDashoffset = '188.5';
         }
       } else {
-        // Small 250ms hysteresis buffer to prevent jitter
-        if (activeGesture && now - lastDetectedTimestamp > 250) {
+        // Grace period (380ms) to withstand momentary camera blur or frame drop
+        if (activeGesture && (now - lastDetectedTimestamp > GRACE_PERIOD_MS)) {
           this.resetHoldState();
-          if (hudGesture) hudGesture.innerText = 'SHOW ✊ / ☝️ / ✌️';
+          if (hudGesture) hudGesture.innerText = 'SHOW HAND SIGN (✋/✊/☝️/✌️)';
         }
       }
     },
@@ -503,6 +524,7 @@
     },
 
     updatePillHighlights(detected) {
+      const pillPalm = document.getElementById('gesturePillPalm');
       const pillFist = document.getElementById('gesturePillFist');
       const pillPoint = document.getElementById('gesturePillPoint');
       const pillV = document.getElementById('gesturePillV');
@@ -517,26 +539,34 @@
         el.className = 'p-1.5 rounded-xl border-2 border-emerald-500 bg-emerald-100 text-emerald-950 font-black flex items-center justify-center gap-1 transition shadow-sm scale-105';
       };
 
+      resetPill(pillPalm);
       resetPill(pillFist);
       resetPill(pillPoint);
       resetPill(pillV);
 
-      if (detected === GESTURE_TYPES.FIST) highlightPill(pillFist);
-      else if (detected === GESTURE_TYPES.POINTING) highlightPill(pillPoint);
+      if (detected === GESTURE_TYPES.PALM) highlightPill(pillPalm);
+      else if (detected === GESTURE_TYPES.FIST) highlightPill(pillFist);
+      else if (detected === GESTURE_TYPES.POINTING || detected === GESTURE_TYPES.THUMBS_UP) highlightPill(pillPoint);
       else if (detected === GESTURE_TYPES.V_SIGN) highlightPill(pillV);
+      else if (detected === GESTURE_TYPES.HAND_SIGN) {
+        highlightPill(pillPalm);
+      }
     },
 
+    // =========================================================================
+    // 🚨 Emergency Alert Trigger
+    // =========================================================================
     triggerEmergencySos(gesture) {
       isTriggerCooldown = true;
       this.resetHoldState();
 
-      console.log(`🚨 HANDS-FREE GESTURE SOS TRIGGERED: [${gesture.toUpperCase()}] held for 1.5s!`);
+      console.log(`🚨 HAND SIGN EMERGENCY SOS TRIGGERED: [${gesture.toUpperCase()}] held for 1.5s!`);
 
       // 1. Success Visual Flash
       const flash = document.getElementById('hudSuccessFlash');
       if (flash) {
         flash.classList.remove('hidden');
-        setTimeout(() => flash.classList.add('hidden'), 2800);
+        setTimeout(() => flash.classList.add('hidden'), 3200);
       }
 
       // 2. Play acoustic confirmation chime
@@ -544,7 +574,7 @@
         try { window.modem.playAlarmChime(); } catch (e) {}
       }
 
-      // 3. Dispatch callback to application
+      // 3. Dispatch SOS to application (publishes MQTT & acoustic broadcast to Rescuer)
       if (typeof onSosTriggerCallback === 'function') {
         onSosTriggerCallback(gesture);
       }
@@ -552,7 +582,7 @@
       // 4. Cooldown timer to prevent accidental double-triggers
       setTimeout(() => {
         isTriggerCooldown = false;
-        console.log('Gesture camera trigger cooldown expired. Ready for next gesture.');
+        console.log('Gesture camera trigger cooldown expired. Ready for next hand sign.');
       }, COOLDOWN_MS);
     },
 
