@@ -331,11 +331,21 @@
           <div id="ackCoordsBadge" class="hidden mt-2 text-[10px] font-mono font-bold text-emerald-900 bg-emerald-100/90 px-2.5 py-1 rounded-lg border border-emerald-300 inline-block">
             📍 EXACT ACKNOWLEDGED GPS PINNED
           </div>
+          <div>
+            <a id="btnAckOpenRoute" href="#" target="_blank" rel="noopener noreferrer" class="hidden mt-2 inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-3.5 py-2 rounded-xl shadow-md transition active:scale-95">
+              <span>🗺️</span> OPEN ROUTE IN MAPS ➔
+            </a>
+          </div>
         </div>
       </div>
-      <button id="btnDismissAck" class="bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 text-xs px-3 py-1.5 rounded-xl font-bold transition">
-        Dismiss
-      </button>
+      <div class="flex items-center gap-1.5 flex-shrink-0">
+        <button id="btnSilenceAckAlarm" type="button" class="bg-red-50 hover:bg-red-100 border border-red-300 text-red-700 text-xs px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1" title="Stop Alarm Sound">
+          <span>🔇</span> Stop Alarm
+        </button>
+        <button id="btnDismissAck" class="bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 text-xs px-3 py-1.5 rounded-xl font-bold transition">
+          Dismiss
+        </button>
+      </div>
     </div>
 
     <!-- Alert Banner (For Receiver when SOS is Detected) -->
@@ -411,8 +421,14 @@
         </div>
       </div>
       <div class="flex flex-wrap items-center gap-2 flex-shrink-0 mt-2 sm:mt-0">
+        <a id="btnBannerOpenRoute" href="#" target="_blank" rel="noopener noreferrer" class="hidden bg-blue-600 hover:bg-blue-700 text-white font-black text-xs px-3.5 py-3 rounded-xl transition uppercase tracking-wider flex items-center gap-1.5 shadow-lg active:scale-95">
+          <span>🗺️</span> OPEN ROUTE IN MAPS ➔
+        </a>
         <button id="btnBannerSendAck" class="bg-purple-600 hover:bg-purple-700 text-white font-black text-xs px-4 py-3 rounded-xl transition uppercase tracking-wider flex items-center gap-1.5 shadow-lg active:scale-95">
           <span>🛡️</span> SEND RESCUE ACK ➔
+        </button>
+        <button id="btnSilenceReceiverBuzzer" type="button" class="bg-red-50 hover:bg-red-100 border border-red-300 text-red-700 font-bold text-xs px-3 py-3 rounded-xl transition flex items-center gap-1" title="Stop Buzzer / Sound">
+          <span>🔇</span> Stop Sound
         </button>
         <button id="btnDismissSos" class="bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 text-xs px-3 py-3 rounded-xl font-bold transition">
           ✕
@@ -466,17 +482,17 @@
 
           <!-- Supported Gestures Pills -->
           <div class="grid grid-cols-4 gap-1.5 mb-2.5 text-center text-[10px] font-mono font-bold">
-            <button id="gesturePillPalm" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('palm')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test Palm sign (Fire)">
-              <span class="text-sm">✋</span> Palm
+            <button id="gesturePillPalm" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('palm')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test Palm sign (Trapped)">
+              <span class="text-sm">✋</span> Palm (Trapped)
             </button>
-            <button id="gesturePillFist" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('wrist')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test Wrist/Fist sign (Trapped)">
-              <span class="text-sm">✊</span> Wrist/Fist
+            <button id="gesturePillFist" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('wrist')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test Wrist sign (Emergency)">
+              <span class="text-sm">✊</span> Wrist (Emergency)
             </button>
-            <button id="gesturePillPoint" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('pointing')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test Pointing sign (Medical)">
-              <span class="text-sm">☝️</span> Point
+            <button id="gesturePillPoint" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('pointing')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test Pointing sign (Medicine)">
+              <span class="text-sm">☝️</span> Point (Medicine)
             </button>
-            <button id="gesturePillV" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('v_sign')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test V-Sign (Flood)">
-              <span class="text-sm">✌️</span> V-Sign
+            <button id="gesturePillV" type="button" onclick="window.GestureCamera && window.GestureCamera.simulateGesture('v_sign')" class="p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100" title="Tap to test V-Sign (Food)">
+              <span class="text-sm">✌️</span> V-Sign (Food)
             </button>
           </div>
 
@@ -555,7 +571,7 @@
           </div>
 
           <p id="txtGestureInstruction" class="text-[10px] text-slate-500 mt-2 font-medium">
-            Show any hand sign (✊ Wrist/Fist: Trapped, ☝️ Point: Medical, ✌️ V-Sign: Flood, ✋ Palm: Fire) and hold for 1.5s. When captured, it automatically sends the disaster signal & live GPS to the rescuer.
+            Show any hand sign: ✋ Palm: Trapped | ✊ Wrist: Emergency | ☝️ Point: Medicine | ✌️ V-Sign: Food. Hold for 1.5s to dispatch alert & exact location to rescuer.
           </p>
         </div>
         <div class="mb-3">
@@ -803,18 +819,18 @@
     if ('caches' in window) {
       caches.keys().then(function(keys) {
         keys.forEach(function(k) {
-          if (k !== 'silentbridge-v37') caches.delete(k);
+          if (k !== 'silentbridge-v38') caches.delete(k);
         });
       });
     }
   </script>
   <!-- High-Precision 100% Offline Pure-JS Canvas Hand & Gesture Engine -->
-  <script src="crc16.js?v=37"></script>
-  <script src="packetEngine.js?v=37"></script>
-  <script src="paho-mqtt.js?v=37"></script>
-  <script src="meshBridge.js?v=37"></script>
-  <script src="audioModem.js?v=37"></script>
-  <script src="gestureCamera.js?v=37"></script>
-  <script src="app.js?v=37"></script>
+  <script src="crc16.js?v=38"></script>
+  <script src="packetEngine.js?v=38"></script>
+  <script src="paho-mqtt.js?v=38"></script>
+  <script src="meshBridge.js?v=38"></script>
+  <script src="audioModem.js?v=38"></script>
+  <script src="gestureCamera.js?v=38"></script>
+  <script src="app.js?v=38"></script>
 </body>
 </html>

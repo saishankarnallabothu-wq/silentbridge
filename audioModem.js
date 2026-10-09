@@ -445,12 +445,31 @@ class AudioModem {
     }
   }
 
-  // Industrial Emergency Buzzer Sound ("nuzer")
+  // Stop any active buzzer/alarm sounds immediately (for unwanted situations / mute / dismiss)
+  stopAllSounds() {
+    try {
+      if (this.activeSoundNodes && this.activeSoundNodes.length > 0) {
+        this.activeSoundNodes.forEach((node) => {
+          try { if (node.stop) node.stop(); } catch (e) {}
+          try { if (node.disconnect) node.disconnect(); } catch (e) {}
+        });
+        this.activeSoundNodes = [];
+      }
+    } catch (e) {
+      console.warn("stopAllSounds note:", e);
+    }
+  }
+
+  // Industrial Emergency Buzzer Sound ("nuzer") - played once upon SOS alert transmission
   playBuzzerSound(duration = 0.8) {
     try {
+      this.stopAllSounds();
       if (!this.audioCtx) return;
       const ctx = this.audioCtx;
+      if (ctx.state === 'suspended') ctx.resume();
       const now = ctx.currentTime;
+
+      if (!this.activeSoundNodes) this.activeSoundNodes = [];
 
       // Master output gain
       const masterGain = ctx.createGain();
@@ -501,13 +520,67 @@ class AudioModem {
       carrier.stop(now + totalTime);
       harmonic.stop(now + totalTime);
       modOsc.stop(now + totalTime);
+
+      this.activeSoundNodes.push(carrier, harmonic, modOsc, masterGain);
+      setTimeout(() => {
+        this.stopAllSounds();
+      }, (totalTime + 0.1) * 1000);
     } catch (e) {
       console.warn("Buzzer sound note:", e);
     }
   }
 
+  // Rescue Alarm Sound (blown when ACK is sent back by Rescuer confirming help!)
   playAlarmChime() {
-    this.playBuzzerSound(0.8);
+    try {
+      this.stopAllSounds();
+      if (!this.audioCtx) return;
+      const ctx = this.audioCtx;
+      if (ctx.state === 'suspended') ctx.resume();
+      const now = ctx.currentTime;
+
+      if (!this.activeSoundNodes) this.activeSoundNodes = [];
+
+      const masterGain = ctx.createGain();
+      masterGain.connect(ctx.destination);
+      if (this.analyser) masterGain.connect(this.analyser);
+
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      osc1.type = 'sawtooth';
+      osc2.type = 'sine';
+
+      // Alternating high-low alarm siren tones (880Hz / 1320Hz WEE-WOO)
+      const cycleLen = 0.22;
+      const cycles = 5; // 1.1s total duration
+      for (let i = 0; i < cycles; i++) {
+        const t = now + i * cycleLen;
+        const freq = (i % 2 === 0) ? 880 : 1320;
+        osc1.frequency.setValueAtTime(freq, t);
+        osc2.frequency.setValueAtTime(freq * 1.5, t);
+      }
+
+      const totalTime = cycles * cycleLen;
+      masterGain.gain.setValueAtTime(0.001, now);
+      masterGain.gain.linearRampToValueAtTime(0.65, now + 0.04);
+      masterGain.gain.setValueAtTime(0.65, now + totalTime - 0.04);
+      masterGain.gain.linearRampToValueAtTime(0.001, now + totalTime);
+
+      osc1.connect(masterGain);
+      osc2.connect(masterGain);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + totalTime);
+      osc2.stop(now + totalTime);
+
+      this.activeSoundNodes.push(osc1, osc2, masterGain);
+      setTimeout(() => {
+        this.stopAllSounds();
+      }, (totalTime + 0.1) * 1000);
+    } catch (e) {
+      console.warn("Alarm chime note:", e);
+    }
   }
 
   // Instant speaker verification buzzer

@@ -51,43 +51,35 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Calibrated Campus Coordinates baseline (TKR College of Engineering & Technology, Meerpet, Hyderabad)
+  // Calibrated Campus Coordinates baseline fallback (TKR College of Engineering & Technology, Meerpet, Hyderabad)
   const DEFAULT_CAMPUS_LAT = 17.329241;
   const DEFAULT_CAMPUS_LON = 78.536512;
 
-  // Restore last verified real GPS location if available
+  // Live GPS tracking state (initialize without assuming stale/hardcoded coordinates)
   try {
     const savedLat = localStorage.getItem("silentbridge_last_lat");
     const savedLon = localStorage.getItem("silentbridge_last_lon");
     const savedAcc = localStorage.getItem("silentbridge_last_acc");
-    if (savedLat && (Math.abs(parseFloat(savedLat) - 17.385044) < 0.001 || Math.abs(parseFloat(savedLat) - 17.345) < 0.05)) {
-      // Purge old stale regional fallback/IP coordinates
-      localStorage.removeItem("silentbridge_last_lat");
-      localStorage.removeItem("silentbridge_last_lon");
-      localStorage.removeItem("silentbridge_last_acc");
-      currentLat = DEFAULT_CAMPUS_LAT;
-      currentLon = DEFAULT_CAMPUS_LON;
-      currentAccuracy = 5;
-      hasRealGpsLock = true;
-      updateSenderGpsDisplay(currentLat, currentLon, currentAccuracy, "Calibrated Campus Location");
-    } else if (savedLat && savedLon && !isNaN(parseFloat(savedLat)) && !isNaN(parseFloat(savedLon))) {
+    // Only restore if user actually had a verified location and it wasn't the hardcoded fallback
+    if (savedLat && savedLon && !isNaN(parseFloat(savedLat)) && !isNaN(parseFloat(savedLon)) &&
+        Math.abs(parseFloat(savedLat) - DEFAULT_CAMPUS_LAT) > 0.0001) {
       currentLat = parseFloat(savedLat);
       currentLon = parseFloat(savedLon);
-      currentAccuracy = savedAcc ? parseInt(savedAcc) : 5;
+      currentAccuracy = savedAcc ? parseInt(savedAcc) : 10;
       hasRealGpsLock = true;
-      updateSenderGpsDisplay(currentLat, currentLon, currentAccuracy, "Restored Verified Location");
+      updateSenderGpsDisplay(currentLat, currentLon, currentAccuracy, "Restored Recent Location");
     } else {
-      currentLat = DEFAULT_CAMPUS_LAT;
-      currentLon = DEFAULT_CAMPUS_LON;
-      currentAccuracy = 5;
-      hasRealGpsLock = true;
-      updateSenderGpsDisplay(currentLat, currentLon, currentAccuracy, "Calibrated Campus Location");
+      currentLat = null;
+      currentLon = null;
+      currentAccuracy = null;
+      hasRealGpsLock = false;
+      updateSenderGpsDisplay(null, null, null, "Acquiring live GPS fix...");
     }
   } catch (e) {
-    currentLat = DEFAULT_CAMPUS_LAT;
-    currentLon = DEFAULT_CAMPUS_LON;
-    currentAccuracy = 5;
-    hasRealGpsLock = true;
+    currentLat = null;
+    currentLon = null;
+    currentAccuracy = null;
+    hasRealGpsLock = false;
   }
 
   const DEFAULT_MASTER_PASSWORD = "RESCUE2026";
@@ -364,7 +356,34 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {}
 
     updateSenderGpsDisplay(currentLat, currentLon, currentAccuracy, label);
-    console.log(`🎯 Automatic GPS Lock Acquired: ${currentLat.toFixed(6)}, ${currentLon.toFixed(6)} (±${currentAccuracy}m)`);
+    console.log(`🎯 Exact GPS Lock Acquired: ${currentLat.toFixed(6)}, ${currentLon.toFixed(6)} (±${currentAccuracy}m)`);
+
+    // Center and update Leaflet map onto exact real coordinates
+    if (typeof L !== 'undefined' && map) {
+      try {
+        if (currentRole === 'sender' && markersLayer) {
+          markersLayer.clearLayers();
+          const selfMarker = L.marker([currentLat, currentLon]).addTo(markersLayer);
+          L.circle([currentLat, currentLon], {
+            color: '#10b981',
+            fillColor: '#10b981',
+            fillOpacity: 0.25,
+            radius: currentAccuracy
+          }).addTo(markersLayer);
+          selfMarker.bindPopup(`
+            <div class="font-mono text-xs">
+              <b style="color:#059669;">📍 YOUR EXACT CURRENT LOCATION</b><br>
+              LAT: ${currentLat.toFixed(6)}<br>
+              LON: ${currentLon.toFixed(6)}<br>
+              <span style="color:#64748b; font-size:10px;">Accuracy: ±${currentAccuracy}m (${label})</span>
+            </div>
+          `);
+          map.setView([currentLat, currentLon], 16);
+        }
+      } catch (mapPinErr) {
+        console.warn("Self marker placement note:", mapPinErr);
+      }
+    }
 
     // If an emergency beacon is currently pending transmission, update telemetry in real time!
     if (activePendingPacket) {
@@ -376,33 +395,89 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // EXACT LIVE HARDWARE SATELLITE GPS RESOLVER (AUTOMATIC LOCK WITH 0 CACHE AGE)
-  function getAccurateDeviceLocation(forceHighTimeout = false) {
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) {
-        console.warn("Hardware Geolocation API unavailable on this browser.");
-        resolve(getFallbackLocation());
-        return;
+  // Network IP Geolocation Fallback (for desktop PCs/browsers without GPS hardware)
+  async function resolveIpLocationFallback() {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch('https://ipapi.co/json/', { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.latitude && data.longitude) {
+          console.log(`🌐 IP Geolocation fix resolved: ${data.latitude}, ${data.longitude} (${data.city || 'City'}, ${data.region || ''})`);
+          return {
+            lat: Number(data.latitude),
+            lon: Number(data.longitude),
+            accuracy: 50
+          };
+        }
       }
+    } catch (e) {
+      console.warn("IP Geolocation fallback note:", e);
+    }
+    return null;
+  }
 
+  // MULTI-TIER REAL HARDWARE GPS & NETWORK GEOLOCATION RESOLVER
+  async function getAccurateDeviceLocation(forceHighTimeout = false) {
+    if (!navigator.geolocation) {
+      console.warn("Hardware Geolocation API unavailable on this browser.");
+      const ipFix = await resolveIpLocationFallback();
+      if (ipFix) {
+        handleHighAccuracyGpsFix({ coords: { latitude: ipFix.lat, longitude: ipFix.lon, accuracy: ipFix.accuracy } }, "Network IP Location");
+        return ipFix;
+      }
+      return getFallbackLocation();
+    }
+
+    // Tier 1: High-Accuracy GPS (satellite / hardware)
+    const tryHighAccuracy = () => new Promise((resolve) => {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          handleHighAccuracyGpsFix(pos, "Hardware Satellite Lock");
-          resolve({
-            lat: currentLat,
-            lon: currentLon,
-            accuracy: currentAccuracy
-          });
+          handleHighAccuracyGpsFix(pos, "Live GPS Satellite Lock");
+          resolve({ lat: currentLat, lon: currentLon, accuracy: currentAccuracy });
         },
         (err) => {
-          console.warn("Hardware GPS satellite notice:", err.message);
-          // If satellites take time or origin is HTTP, ensure calibrated campus baseline is locked and displayed
-          updateSenderGpsDisplay(currentLat, currentLon, currentAccuracy, "GPS Locked (Calibrated Pin)");
-          resolve(getFallbackLocation());
+          console.warn("High-accuracy GPS attempt note:", err.message);
+          resolve(null);
         },
-        { enableHighAccuracy: true, timeout: forceHighTimeout ? 25000 : 15000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: forceHighTimeout ? 10000 : 5000, maximumAge: 0 }
       );
     });
+
+    // Tier 2: Low-Accuracy GPS (Wi-Fi / OS location provider - very fast on laptops & indoors)
+    const tryLowAccuracy = () => new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          handleHighAccuracyGpsFix(pos, "Device OS / Network Location");
+          resolve({ lat: currentLat, lon: currentLon, accuracy: currentAccuracy });
+        },
+        (err) => {
+          console.warn("Low-accuracy GPS attempt note:", err.message);
+          resolve(null);
+        },
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 30000 }
+      );
+    });
+
+    let fix = await tryHighAccuracy();
+    if (!fix) {
+      fix = await tryLowAccuracy();
+    }
+    if (!fix) {
+      const ipFix = await resolveIpLocationFallback();
+      if (ipFix) {
+        handleHighAccuracyGpsFix({ coords: { latitude: ipFix.lat, longitude: ipFix.lon, accuracy: ipFix.accuracy } }, "Network IP Location");
+        fix = ipFix;
+      }
+    }
+
+    if (fix && fix.lat && fix.lon) {
+      return fix;
+    }
+
+    return getFallbackLocation();
   }
 
   // Continuous background GPS listener for real-time precision tracking (maximumAge: 0)
@@ -1161,10 +1236,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 800);
   });
 
+  const btnSilenceAckAlarm = document.getElementById("btnSilenceAckAlarm");
+  if (btnSilenceAckAlarm) {
+    btnSilenceAckAlarm.addEventListener("click", () => {
+      if (window.modem && typeof window.modem.stopAllSounds === 'function') {
+        window.modem.stopAllSounds();
+      }
+    });
+  }
+
+  const btnSilenceReceiverBuzzer = document.getElementById("btnSilenceReceiverBuzzer");
+  if (btnSilenceReceiverBuzzer) {
+    btnSilenceReceiverBuzzer.addEventListener("click", () => {
+      if (window.modem && typeof window.modem.stopAllSounds === 'function') {
+        window.modem.stopAllSounds();
+      }
+    });
+  }
+
   document.getElementById("btnDismissAck").addEventListener("click", () => {
+    if (window.modem && typeof window.modem.stopAllSounds === 'function') {
+      window.modem.stopAllSounds();
+    }
     ackBanner.classList.add("hidden");
   });
   document.getElementById("btnDismissSos").addEventListener("click", () => {
+    if (window.modem && typeof window.modem.stopAllSounds === 'function') {
+      window.modem.stopAllSounds();
+    }
     sosBanner.classList.add("hidden");
   });
 
@@ -1881,17 +1980,21 @@ document.addEventListener("DOMContentLoaded", () => {
       updateMicStatusUi();
     }
 
-    // Ensure fresh satellite fix if lock hasn't been verified recently
-    if (!hasRealGpsLock || !currentLat || (Date.now() - lastGpsTimestamp > 20000)) {
-      console.log("Acquiring fresh high-accuracy satellite fix before dispatch...");
-      const freshLoc = await Promise.race([
-        getAccurateDeviceLocation(false),
-        new Promise(r => setTimeout(r, 2500))
-      ]);
-      if (freshLoc && freshLoc.lat) {
-        currentLat = freshLoc.lat;
-        currentLon = freshLoc.lon;
-        currentAccuracy = freshLoc.accuracy;
+    // Ensure fresh satellite/geolocation fix if lock hasn't been verified recently
+    if (!hasRealGpsLock || !currentLat || (Date.now() - lastGpsTimestamp > 25000)) {
+      console.log("Acquiring fresh accurate GPS/network fix before dispatch...");
+      try {
+        const freshLoc = await Promise.race([
+          getAccurateDeviceLocation(false),
+          new Promise(r => setTimeout(r, 5500))
+        ]);
+        if (freshLoc && freshLoc.lat) {
+          currentLat = freshLoc.lat;
+          currentLon = freshLoc.lon;
+          currentAccuracy = freshLoc.accuracy;
+        }
+      } catch (gpsAcqErr) {
+        console.warn("GPS acquire before dispatch note:", gpsAcqErr);
       }
     }
 
@@ -1933,6 +2036,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const acousticBytes = (typeof PacketEngine !== 'undefined' && PacketEngine.encodeAcoustic)
       ? PacketEngine.encodeAcoustic(packetObj)
       : PacketEngine.encode(packetObj);
+
+    // 0. Industrial Buzzer Burst (plays for 0.8s and then stops, never loops)
+    if (window.modem && typeof window.modem.playBuzzerSound === 'function') {
+      try { window.modem.playBuzzerSound(0.8); } catch (e) {}
+    }
 
     // 1. Acoustic Speaker Burst (Works 100% offline without cellular or Wi-Fi)
     await modem.transmitPacket(acousticBytes);
@@ -2112,7 +2220,11 @@ document.addEventListener("DOMContentLoaded", () => {
       isBroadcast: isBroadcast,
       timestamp: ackTime,
       _room: targetRoom,
-      ackVoiceAudio: rescuerPayload
+      ackVoiceAudio: rescuerPayload,
+      lat: (target && target.lat != null) ? Number(target.lat) : (currentLat || null),
+      lon: (target && target.lon != null) ? Number(target.lon) : (currentLon || null),
+      rescuerLat: currentLat || rescuerDeviceLat || null,
+      rescuerLon: currentLon || rescuerDeviceLon || null
     });
     console.log(`🌐 Mesh ACK packet broadcasted for ${labelId} (Room: #${targetRoom}). Rescuer voice attached: ${Boolean(rescuerPayload)}`);
 
@@ -2170,6 +2282,9 @@ document.addEventListener("DOMContentLoaded", () => {
           radius: tAcc
         }).addTo(markersLayer);
         const mapsPinUrl = `https://www.google.com/maps?q=${tLat.toFixed(6)},${tLon.toFixed(6)}`;
+        const routeUrl = (rescuerDeviceLat && rescuerDeviceLon)
+          ? `https://www.google.com/maps/dir/?api=1&origin=${rescuerDeviceLat},${rescuerDeviceLon}&destination=${tLat},${tLon}&travelmode=driving`
+          : `https://www.google.com/maps/dir/?api=1&destination=${tLat},${tLon}`;
         ackMarker.bindPopup(`
           <div class="font-mono text-xs text-slate-900" style="min-width: 220px; padding: 4px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -2191,7 +2306,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
               </div>
             </a>
-            <div style="margin-top: 8px; width: 100%; background: #059669; color: white; font-weight: 900; padding: 8px 10px; border-radius: 10px; text-align: center; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;">
+            <!-- OPEN ROUTE IN MAPS BUTTON -->
+            <a href="${routeUrl}" target="_blank" rel="noopener noreferrer" style="display:block; text-decoration:none; margin-top:8px;" title="Open navigation route in Google Maps">
+              <button type="button" style="width: 100%; background: #2563eb; color: white; font-weight: 900; padding: 10px 12px; border-radius: 10px; border: none; cursor: pointer; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; box-shadow: 0 4px 12px rgba(37,99,235,0.3); display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <span>🗺️</span> OPEN ROUTE IN MAPS ➔
+              </button>
+            </a>
+            <div style="margin-top: 6px; width: 100%; background: #059669; color: white; font-weight: 900; padding: 7px 10px; border-radius: 10px; text-align: center; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;">
               🛡️ RESCUE ACK ACTIVE & TRANSMITTED
             </div>
           </div>
@@ -2268,9 +2389,21 @@ document.addEventListener("DOMContentLoaded", () => {
           document.getElementById("ackTime").innerText = currentTime;
           document.getElementById("ackTitle").innerText = `BASE STATION ACKNOWLEDGED DISTRESS BEACON #${packet.msgId || myLastSentMsgId || 'CONFIRMED'}! HELP IS EN ROUTE.`;
           const ackCoordsEl = document.getElementById("ackCoordsBadge");
-          if (ackCoordsEl && currentLat && currentLon) {
-            ackCoordsEl.innerText = `📍 EXACT ACKNOWLEDGED GPS: ${Number(currentLat).toFixed(6)}, ${Number(currentLon).toFixed(6)} (±${Math.round(currentAccuracy || 10)}m)`;
+          const targetLat = (packet.lat != null) ? Number(packet.lat) : (currentLat || null);
+          const targetLon = (packet.lon != null) ? Number(packet.lon) : (currentLon || null);
+          if (ackCoordsEl && targetLat && targetLon) {
+            ackCoordsEl.innerText = `📍 EXACT ACKNOWLEDGED GPS: ${Number(targetLat).toFixed(6)}, ${Number(targetLon).toFixed(6)} (±${Math.round(currentAccuracy || 10)}m)`;
             ackCoordsEl.classList.remove("hidden");
+          }
+          const btnAckOpenRoute = document.getElementById("btnAckOpenRoute");
+          if (btnAckOpenRoute && targetLat && targetLon) {
+            const rLat = packet.rescuerLat || null;
+            const rLon = packet.rescuerLon || null;
+            const routeUrl = (rLat && rLon)
+              ? `https://www.google.com/maps/dir/?api=1&origin=${rLat},${rLon}&destination=${targetLat},${targetLon}&travelmode=driving`
+              : `https://www.google.com/maps/dir/?api=1&destination=${targetLat},${targetLon}`;
+            btnAckOpenRoute.href = routeUrl;
+            btnAckOpenRoute.classList.remove("hidden");
           }
           ackBanner.classList.remove("hidden");
 
@@ -2318,6 +2451,14 @@ document.addEventListener("DOMContentLoaded", () => {
       if (sosAccuracyBadge) sosAccuracyBadge.innerText = `Accuracy: ±${validAcc}m`;
       if (sosLocationLink) {
         sosLocationLink.href = `https://www.google.com/maps?q=${validLat.toFixed(6)},${validLon.toFixed(6)}`;
+      }
+      const routeUrl = (rescuerDeviceLat && rescuerDeviceLon)
+        ? `https://www.google.com/maps/dir/?api=1&origin=${rescuerDeviceLat},${rescuerDeviceLon}&destination=${validLat},${validLon}&travelmode=driving`
+        : `https://www.google.com/maps/dir/?api=1&destination=${validLat},${validLon}`;
+      const btnBannerOpenRoute = document.getElementById("btnBannerOpenRoute");
+      if (btnBannerOpenRoute) {
+        btnBannerOpenRoute.href = routeUrl;
+        btnBannerOpenRoute.classList.remove("hidden");
       }
       updateDistanceBadge(packet);
     }
@@ -2436,7 +2577,7 @@ document.addEventListener("DOMContentLoaded", () => {
     latestDetectedSosPacket = packet;
     playEmergencyAlertSound();
 
-    const typeNames = { 1: "Medical Emergency", 2: "Trapped Disaster", 3: "Fire Disaster", 4: "Flood / Evacuation" };
+    const typeNames = { 1: "Medicine Needed", 2: "Trapped Survivor", 3: "Fire Emergency", 4: "Food Needed" };
     let typeName = typeNames[packet.type] || "Distress";
     if (packet.text && packet.text.includes("DISASTER SIGNAL")) {
       typeName = packet.text;
@@ -2447,6 +2588,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const validLat = (packet.lat != null && !isNaN(packet.lat) && Number(packet.lat) !== 0) ? Number(packet.lat) : (currentLat || DEFAULT_CAMPUS_LAT);
     const validLon = (packet.lon != null && !isNaN(packet.lon) && Number(packet.lon) !== 0) ? Number(packet.lon) : (currentLon || DEFAULT_CAMPUS_LON);
     const validAcc = Math.round(Number(packet.accuracy) || 5);
+
+    // Compute route URL to survivor for Google Maps navigation
+    const routeUrl = (rescuerDeviceLat && rescuerDeviceLon)
+      ? `https://www.google.com/maps/dir/?api=1&origin=${rescuerDeviceLat},${rescuerDeviceLon}&destination=${validLat},${validLon}&travelmode=driving`
+      : `https://www.google.com/maps/dir/?api=1&destination=${validLat},${validLon}`;
 
     // Update Target Beacon ID Input in Console
     const txtBeaconId = document.getElementById("txtTargetBeaconId");
@@ -2476,6 +2622,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (sosAccuracyBadge) sosAccuracyBadge.innerText = `Accuracy: ±${validAcc}m`;
     if (sosLocationLink) {
       sosLocationLink.href = `https://www.google.com/maps?q=${validLat.toFixed(6)},${validLon.toFixed(6)}`;
+    }
+
+    const btnBannerOpenRoute = document.getElementById("btnBannerOpenRoute");
+    if (btnBannerOpenRoute) {
+      btnBannerOpenRoute.href = routeUrl;
+      btnBannerOpenRoute.classList.remove("hidden");
     }
 
     const bannerCopyBtn = document.getElementById("btnBannerCopyCoords");
@@ -2586,8 +2738,15 @@ document.addEventListener("DOMContentLoaded", () => {
               </div>
             </a>
 
+            <!-- OPEN ROUTE IN MAPS BUTTON -->
+            <a href="${routeUrl}" target="_blank" rel="noopener noreferrer" style="display:block; text-decoration:none; margin-top:8px;" title="Open navigation route to survivor in Google Maps">
+              <button type="button" style="width: 100%; background: #2563eb; color: white; font-weight: 900; padding: 10px 12px; border-radius: 10px; border: none; cursor: pointer; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; box-shadow: 0 4px 12px rgba(37,99,235,0.3); display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <span>🗺️</span> OPEN ROUTE IN MAPS ➔
+              </button>
+            </a>
+
             ${packet.voiceAudio ? '<div style="color:#7c3aed; font-weight:bold; margin-top:6px; font-size:11px;">🎙️ Situational Voice Memo Attached</div>' : ''}
-            <div style="margin-top: 8px; width: 100%; background: #10b981; color: white; font-weight: 900; padding: 8px 10px; border-radius: 10px; text-align: center; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; box-shadow: 0 2px 8px rgba(16,185,129,0.25);">
+            <div style="margin-top: 6px; width: 100%; background: #10b981; color: white; font-weight: 900; padding: 7px 10px; border-radius: 10px; text-align: center; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; box-shadow: 0 2px 8px rgba(16,185,129,0.25);">
               📍 EXACT SURVIVOR LOCATION PINNED
             </div>
           </div>
@@ -2691,6 +2850,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       ${voicePlayerHtml}
       <div class="flex flex-wrap gap-2 mt-1">
+        <a href="${routeUrl}" target="_blank" rel="noopener noreferrer" class="w-full inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-black py-2.5 px-3 rounded-xl transition uppercase tracking-wider shadow active:scale-95 text-xs text-center" title="Open navigation route to survivor in Google Maps">
+          <span>🗺️</span> OPEN ROUTE IN MAPS ➔
+        </a>
         <button class="ack-btn card-ack-btn-${packet.msgId} w-full bg-purple-600 hover:bg-purple-700 text-white font-black py-2.5 px-3 rounded-xl transition uppercase tracking-wider shadow active:scale-95 text-xs">
           🛡️ SEND RESCUE ACK ➔
         </button>

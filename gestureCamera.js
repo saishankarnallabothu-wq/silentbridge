@@ -77,11 +77,11 @@
       }
 
       const gestureTitles = {
-        FIST: '✊ WRIST / CLOSED FIST (TRAPPED DISASTER)',
-        WRIST: '✊ WRIST / FIST SIGN (TRAPPED DISASTER)',
-        POINTING: '☝️ POINTING INDEX (MEDICAL DISASTER)',
-        V_SIGN: '✌️ V-SIGN (FLOOD / EVACUATION)',
-        PALM: '✋ OPEN PALM (FIRE / DISTRESS)'
+        PALM: '✋ OPEN PALM (TRAPPED)',
+        WRIST: '✊ WRIST SIGN (EMERGENCY)',
+        FIST: '✊ WRIST SIGN (EMERGENCY)',
+        POINTING: '☝️ POINTING (MEDICINE)',
+        V_SIGN: '✌️ V-SIGN (FOOD)'
       };
 
       if (label) label.textContent = `CONFIRMING ${gestureTitles[gestureName] || gestureName}...`;
@@ -111,7 +111,7 @@
           circleSec.textContent = `${remaining}s`;
         }
         if (circleEmoji) {
-          const emojis = { FIST: '✊', WRIST: '✊', POINTING: '☝️', V_SIGN: '✌️', PALM: '✋' };
+          const emojis = { PALM: '✋', WRIST: '✊', FIST: '✊', POINTING: '☝️', V_SIGN: '✌️' };
           circleEmoji.textContent = emojis[gestureName] || '🖐️';
         }
 
@@ -120,18 +120,18 @@
           console.log(`[Safety Pipeline] 1.5s Gesture Hold Complete! Instant Dispatching: ${gestureName}`);
 
           const distressTypes = {
-            FIST: 2, // Trapped
-            WRIST: 2, // Trapped
-            POINTING: 1, // Medical
-            V_SIGN: 4, // Flood
-            PALM: 3 // Fire
+            PALM: 2,     // Trapped
+            WRIST: 2,    // Emergency
+            FIST: 2,     // Emergency
+            POINTING: 1, // Medicine
+            V_SIGN: 4    // Food
           };
           const defaultMsgs = {
-            FIST: 'DISASTER SIGNAL: TRAPPED (WRIST/FIST SIGN)',
-            WRIST: 'DISASTER SIGNAL: TRAPPED (WRIST SIGN)',
-            POINTING: 'DISASTER SIGNAL: MEDICAL EMERGENCY (POINTING)',
-            V_SIGN: 'DISASTER SIGNAL: FLOOD / EVACUATION (V-SIGN)',
-            PALM: 'DISASTER SIGNAL: FIRE / RESCUE DISTRESS (PALM)'
+            PALM: 'DISASTER SIGNAL: TRAPPED (PALM SIGN)',
+            WRIST: 'DISASTER SIGNAL: EMERGENCY (WRIST SIGN)',
+            FIST: 'DISASTER SIGNAL: EMERGENCY (WRIST SIGN)',
+            POINTING: 'DISASTER SIGNAL: MEDICINE NEEDED (POINTING)',
+            V_SIGN: 'DISASTER SIGNAL: FOOD NEEDED (V-SIGN)'
           };
 
           const distressType = distressTypes[gestureName] || 2;
@@ -217,30 +217,30 @@
           <span>Waiting for Hand Sign...</span>
         `;
         badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-black/70 text-slate-300 border border-white/20 backdrop-blur-sm font-bold flex items-center gap-1.5';
+      } else if (gestureName === 'PALM') {
+        badge.innerHTML = `
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+          <span class="text-emerald-300">✋ PALM DETECTED // TRAPPED (HOLD 1.5s)</span>
+        `;
+        badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-emerald-950/80 text-emerald-200 border border-emerald-500/50 backdrop-blur-sm font-bold flex items-center gap-1.5';
       } else if (gestureName === 'FIST' || gestureName === 'WRIST') {
         badge.innerHTML = `
           <span class="w-2 h-2 rounded-full bg-red-400 animate-ping"></span>
-          <span class="text-rose-300">✊ WRIST / FIST DETECTED // HOLD 1.5s</span>
+          <span class="text-rose-300">✊ WRIST DETECTED // EMERGENCY (HOLD 1.5s)</span>
         `;
         badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-red-950/80 text-rose-200 border border-red-500/50 backdrop-blur-sm font-bold flex items-center gap-1.5';
       } else if (gestureName === 'POINTING') {
         badge.innerHTML = `
           <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-          <span class="text-amber-300">☝️ POINTING INDEX DETECTED // HOLD 1.5s</span>
+          <span class="text-amber-300">☝️ POINT DETECTED // MEDICINE (HOLD 1.5s)</span>
         `;
         badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-amber-950/80 text-amber-200 border border-amber-500/50 backdrop-blur-sm font-bold flex items-center gap-1.5';
       } else if (gestureName === 'V_SIGN') {
         badge.innerHTML = `
           <span class="w-2 h-2 rounded-full bg-blue-400 animate-ping"></span>
-          <span class="text-blue-300">✌️ V-SIGN DETECTED // HOLD 1.5s</span>
+          <span class="text-blue-300">✌️ V-SIGN DETECTED // FOOD (HOLD 1.5s)</span>
         `;
         badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-blue-950/80 text-blue-200 border border-blue-500/50 backdrop-blur-sm font-bold flex items-center gap-1.5';
-      } else if (gestureName === 'PALM') {
-        badge.innerHTML = `
-          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-          <span class="text-emerald-300">✋ OPEN PALM DETECTED // HOLD 1.5s</span>
-        `;
-        badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-emerald-950/80 text-emerald-200 border border-emerald-500/50 backdrop-blur-sm font-bold flex items-center gap-1.5';
       }
     },
 
