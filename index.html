@@ -493,16 +493,34 @@
             <canvas id="gestureCanvasOverlay" class="absolute inset-0 w-full h-full pointer-events-none transform -scale-x-100"></canvas>
             
             <!-- HUD Status Bar -->
-            <div class="absolute top-2 left-2 right-2 flex justify-between items-center pointer-events-none z-10">
-              <span id="hudStatusBadge" class="bg-black/60 backdrop-blur-md text-white text-[10px] font-mono px-2 py-0.5 rounded-lg border border-white/20 font-bold flex items-center gap-1">
+            <div class="absolute top-2 left-2 right-2 flex justify-between items-center pointer-events-none z-10 gap-2">
+              <span id="hudStatusBadge" class="bg-black/60 backdrop-blur-md text-white text-[10px] font-mono px-2 py-0.5 rounded-lg border border-white/20 font-bold flex items-center gap-1 shrink-0">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> CAMERA ACTIVE
               </span>
-              <span id="hudDetectedGesture" class="bg-purple-600/90 backdrop-blur-md text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg border border-purple-300">
-                SHOW HAND SIGN (✋/✊/☝️/✌️)
-              </span>
+              <div id="gestureDetectedBadge" class="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-black/70 text-slate-300 border border-white/20 backdrop-blur-sm font-bold flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-slate-500 animate-pulse"></span>
+                <span>Waiting for Hand Sign...</span>
+              </div>
             </div>
 
-            <!-- Circular 1.5s Hold Progress HUD -->
+            <!-- SafetyPipeline 1.2s Hold Countdown HUD -->
+            <div id="gestureHoldHud" class="hidden absolute inset-0 bg-black/50 backdrop-blur-xs flex flex-col items-center justify-center p-4 pointer-events-none z-20 transition-all">
+              <div class="w-full max-w-[280px] bg-slate-900/90 border-2 border-white/20 rounded-2xl p-3.5 shadow-2xl flex flex-col items-center">
+                <span id="gestureHoldLabel" class="text-[11px] font-mono font-black text-white uppercase tracking-wider mb-2 text-center drop-shadow">
+                  CONFIRMING HAND SIGN...
+                </span>
+                <!-- Progress Bar Container -->
+                <div class="w-full bg-white/10 rounded-full h-3 overflow-hidden border border-white/20 p-0.5 mb-1.5">
+                  <div id="gestureHoldProgressBar" class="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-emerald-400 rounded-full transition-all duration-75" style="width: 0%"></div>
+                </div>
+                <div class="flex items-center justify-between w-full text-[10px] font-mono text-white/80">
+                  <span>HOLD STEADY</span>
+                  <span id="gestureHoldPercentText" class="font-bold text-emerald-400 font-mono">0%</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Circular Hold Progress HUD Companion -->
             <div id="hudHoldCountdownContainer" class="hidden absolute inset-0 bg-black/40 backdrop-blur-xs flex flex-col items-center justify-center pointer-events-none z-20 transition-all">
               <div class="relative w-20 h-20 flex items-center justify-center">
                 <svg class="w-20 h-20 transform -rotate-90" viewBox="0 0 72 72">
@@ -511,7 +529,7 @@
                 </svg>
                 <div class="absolute inset-0 flex flex-col items-center justify-center text-white">
                   <span id="hudHoldEmoji" class="text-xl">✋</span>
-                  <span id="hudHoldSecondsText" class="text-xs font-mono font-black">1.5s</span>
+                  <span id="hudHoldSecondsText" class="text-xs font-mono font-black">1.2s</span>
                 </div>
               </div>
               <span id="hudHoldLabel" class="text-[11px] font-black text-white mt-1.5 font-mono uppercase tracking-wider drop-shadow">
@@ -534,7 +552,7 @@
           </div>
 
           <p id="txtGestureInstruction" class="text-[10px] text-slate-500 mt-2 font-medium">
-            Show any hand sign (✋ Palm, ✊ Fist, ☝️ Point, ✌️ V-Sign) and hold for 1.5s. When captured, it automatically sends an emergency alert & live GPS to the receiver.
+            Show any hand sign (✋ Palm, ✊ Fist, ☝️ Point, ✌️ V-Sign) and hold for 1.2s. When captured, it automatically sends an emergency alert & live GPS to the receiver.
           </p>
         </div>
 
@@ -784,18 +802,18 @@
     if ('caches' in window) {
       caches.keys().then(function(keys) {
         keys.forEach(function(k) {
-          if (k !== 'silentbridge-v31') caches.delete(k);
+          if (k !== 'silentbridge-v32') caches.delete(k);
         });
       });
     }
   </script>
   <!-- High-Precision 100% Offline Pure-JS Canvas Hand & Gesture Engine -->
-  <script src="crc16.js?v=31"></script>
-  <script src="packetEngine.js?v=31"></script>
-  <script src="paho-mqtt.js?v=31"></script>
-  <script src="meshBridge.js?v=31"></script>
-  <script src="audioModem.js?v=31"></script>
-  <script src="gestureCamera.js?v=31"></script>
-  <script src="app.js?v=31"></script>
+  <script src="crc16.js?v=32"></script>
+  <script src="packetEngine.js?v=32"></script>
+  <script src="paho-mqtt.js?v=32"></script>
+  <script src="meshBridge.js?v=32"></script>
+  <script src="audioModem.js?v=32"></script>
+  <script src="gestureCamera.js?v=32"></script>
+  <script src="app.js?v=32"></script>
 </body>
 </html>

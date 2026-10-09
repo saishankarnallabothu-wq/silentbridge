@@ -1770,30 +1770,30 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // ==========================================
-  // 📷 HANDS-FREE GESTURE CAMERA SOS DISPATCH WIRING
+  // 📷 HANDS-FREE GESTURE CAMERA SOS DISPATCH WIRING & SAFETY PIPELINE
   // ==========================================
+  window.executePanicSosDispatch = async function({ source = 'gesture', gestureName = 'FIST', distressType = 2, message = '' } = {}) {
+    console.log(`🚨 executePanicSosDispatch triggered: [${gestureName}] via [${source}] (Type: ${distressType})`);
+    if (typeof TacticalSpeech !== 'undefined' && typeof TacticalSpeech.speak === 'function') {
+      TacticalSpeech.speak(`Emergency ${gestureName} hand sign detected! Transmitting live distress beacon to rescue team.`, true);
+    }
+    return await executeSosDispatch({
+      isPanic: true,
+      customNote: message || `CAMERA GESTURE SOS: ${gestureName}`,
+      customType: distressType
+    });
+  };
+
   if (typeof window.GestureCamera !== 'undefined') {
     window.GestureCamera.init({
       onTrigger: async (gesture) => {
-        console.log(`🚨 Hands-free gesture emergency trigger fired: [${gesture}]`);
-        const gestureNames = {
-          palm: 'OPEN PALM (STOP SIGN)',
-          fist: 'FIST (CLOSED HAND)',
-          pointing: 'POINTING (INDEX FINGER)',
-          v_sign: 'V-SIGN (PEACE SIGN)',
-          thumbs_up: 'THUMBS UP',
-          hand_sign: 'HAND SIGN'
-        };
-        const gestureTitle = gestureNames[gesture] || `${gesture.toUpperCase()} HAND SIGN`;
-
-        // Immediate audible voice confirmation for survivor
-        TacticalSpeech.speak(`Emergency hand sign detected! Transmitting live distress beacon to rescue team.`, true);
-
-        // Automatically transfer distress beacon & GPS to Rescuer
-        await executeSosDispatch({
-          isPanic: true,
-          customNote: `GESTURE SOS: ${gesture.toUpperCase()} HAND SIGN (HELD 1.5S)`,
-          customType: gesture === 'v_sign' ? 1 : 2
+        const u = String(gesture).toUpperCase();
+        const distressType = u === 'FIST' ? 2 : (u === 'POINTING' ? 1 : (u === 'V_SIGN' ? 4 : 2));
+        await window.executePanicSosDispatch({
+          source: 'gesture',
+          gestureName: u,
+          distressType: distressType,
+          message: `CAMERA GESTURE SOS: ${u}`
         });
       }
     });

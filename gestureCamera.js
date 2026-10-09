@@ -1,42 +1,267 @@
-// gestureCamera.js - High-Precision Hands-Free Hand Sign SOS Camera (SilentBridge)
-// 100% Offline Pure-JS Canvas Computer Vision.
-// Detects ANY Hand Sign: ✋ Open Palm, ✊ Fist, ☝️ Pointing, ✌️ V-Sign, 👍 Thumbs Up, or 🖐️ Hand Sign.
-// Holding any hand sign steadily for 1.5s automatically dispatches the emergency SOS to the receiver.
+// gestureCamera.js - SafetyPipeline Hands-Free Emergency Gesture Engine (SilentBridge)
+// 100% Offline Pure-JS Canvas Computer Vision with 1.2s continuous hold & 350ms noise debounce.
 
 (function (window) {
   'use strict';
 
-  const GESTURE_TYPES = {
-    PALM: 'palm',
-    FIST: 'fist',
-    POINTING: 'pointing',
-    V_SIGN: 'v_sign',
-    THUMBS_UP: 'thumbs_up',
-    HAND_SIGN: 'hand_sign'
+  // =========================================================================
+  // 🛡️ SafetyPipeline State Machine (Exact User Specification)
+  // =========================================================================
+  const SafetyPipeline = {
+    // Gesture Hold Configuration & State (1.2s smooth hold with 350ms noise debounce)
+    gesture: {
+      active: false,
+      cameraStream: null,
+      handsDetector: null,
+      currentDetectedGesture: null,
+      holdStartTime: null,
+      holdDurationMs: 1200,
+      isHolding: false,
+      holdAnimFrameRef: null,
+      graceTimeoutId: null
+    },
+
+    cleanupAllTimers() {
+      if (this.gesture.holdAnimFrameRef) {
+        cancelAnimationFrame(this.gesture.holdAnimFrameRef);
+        this.gesture.holdAnimFrameRef = null;
+      }
+      if (this.gesture.graceTimeoutId) {
+        clearTimeout(this.gesture.graceTimeoutId);
+        this.gesture.graceTimeoutId = null;
+      }
+    },
+
+    onGestureDetected(gestureName, rawLandmarks = null) {
+      if (!gestureName) {
+        // If hand detection dropped for a frame, wait for grace period before resetting hold
+        if (this.gesture.isHolding && !this.gesture.graceTimeoutId) {
+          this.gesture.graceTimeoutId = setTimeout(() => {
+            this.resetGestureHold();
+            this.updateGestureBadge(null);
+            this.updatePillHighlights(null);
+            this.gesture.graceTimeoutId = null;
+          }, 350);
+        }
+        return;
+      }
+
+      // Valid gesture detected -> clear pending grace cancel
+      if (this.gesture.graceTimeoutId) {
+        clearTimeout(this.gesture.graceTimeoutId);
+        this.gesture.graceTimeoutId = null;
+      }
+
+      // If new gesture started
+      if (this.gesture.currentDetectedGesture !== gestureName) {
+        this.resetGestureHold();
+        this.gesture.currentDetectedGesture = gestureName;
+        this.gesture.holdStartTime = Date.now();
+        this.gesture.isHolding = true;
+        this.updateGestureBadge(gestureName);
+        this.updatePillHighlights(gestureName);
+        this.startHoldCountdown(gestureName);
+      }
+    },
+
+    startHoldCountdown(gestureName) {
+      const hud = document.getElementById('gestureHoldHud');
+      const progressBar = document.getElementById('gestureHoldProgressBar');
+      const percentText = document.getElementById('gestureHoldPercentText');
+      const label = document.getElementById('gestureHoldLabel');
+
+      if (hud) {
+        hud.classList.remove('hidden');
+        hud.style.display = 'flex';
+      }
+
+      const gestureTitles = {
+        FIST: '✊ CLOSED FIST (PANIC SOS)',
+        POINTING: '☝️ POINTING (MEDICAL SOS)',
+        V_SIGN: '✌️ V-SIGN (EVAC / RESCUE SOS)',
+        PALM: '✋ OPEN PALM (DISTRESS SOS)'
+      };
+
+      if (label) label.textContent = `CONFIRMING ${gestureTitles[gestureName] || gestureName}...`;
+
+      const checkProgress = () => {
+        if (!this.gesture.isHolding || !this.gesture.holdStartTime) return;
+
+        const elapsed = Date.now() - this.gesture.holdStartTime;
+        const progress = Math.min(100, (elapsed / this.gesture.holdDurationMs) * 100);
+
+        if (progressBar) progressBar.style.width = `${progress}%`;
+        if (percentText) percentText.textContent = `${Math.round(progress)}%`;
+
+        // Circular companion HUD update
+        const circleContainer = document.getElementById('hudHoldCountdownContainer');
+        const circleRing = document.getElementById('hudHoldSvgRing');
+        const circleSec = document.getElementById('hudHoldSecondsText');
+        const circleEmoji = document.getElementById('hudHoldEmoji');
+        if (circleContainer) circleContainer.classList.remove('hidden');
+        if (circleRing) {
+          const circumference = 188.5;
+          circleRing.style.strokeDashoffset = circumference * (1 - progress / 100);
+          circleRing.style.stroke = progress > 70 ? '#10b981' : '#a855f7';
+        }
+        if (circleSec) {
+          const remaining = Math.max(0, (this.gesture.holdDurationMs - elapsed) / 1000).toFixed(1);
+          circleSec.textContent = `${remaining}s`;
+        }
+        if (circleEmoji) {
+          const emojis = { FIST: '✊', POINTING: '☝️', V_SIGN: '✌️', PALM: '✋' };
+          circleEmoji.textContent = emojis[gestureName] || '🖐️';
+        }
+
+        if (elapsed >= this.gesture.holdDurationMs) {
+          // Gesture Hold Complete! Transmit SOS immediately across all channels!
+          console.log(`[Safety Pipeline] Gesture Hold Complete! Instant Dispatching: ${gestureName}`);
+
+          const distressType = gestureName === 'FIST' ? 2 : (gestureName === 'POINTING' ? 1 : (gestureName === 'V_SIGN' ? 4 : 2));
+          const defaultMsgs = {
+            FIST: 'CAMERA GESTURE SOS: CLOSED FIST (TRAPPED)',
+            POINTING: 'CAMERA GESTURE SOS: POINTING (MEDICAL)',
+            V_SIGN: 'CAMERA GESTURE SOS: V-SIGN (EVAC / SHELTER)',
+            PALM: 'CAMERA GESTURE SOS: OPEN PALM (DISTRESS)'
+          };
+
+          this.resetGestureHold();
+
+          // Flash visual feedback on badge
+          const badge = document.getElementById('gestureDetectedBadge');
+          if (badge) {
+            badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span><span class="text-emerald-300 font-bold">🚨 GESTURE SOS DISPATCHED TO RESCUE HQ!</span>`;
+            badge.className = 'text-[11px] font-mono px-3 py-1 rounded-lg bg-emerald-950/90 text-emerald-200 border border-emerald-400 backdrop-blur-sm font-bold flex items-center gap-1.5 shadow-lg';
+          }
+
+          // Full visual flash overlay
+          const flash = document.getElementById('hudSuccessFlash');
+          if (flash) {
+            flash.classList.remove('hidden');
+            setTimeout(() => flash.classList.add('hidden'), 3200);
+          }
+
+          // Audio chime
+          if (window.modem && typeof window.modem.playAlarmChime === 'function') {
+            try { window.modem.playAlarmChime(); } catch (e) {}
+          }
+
+          // Execute dispatch
+          if (typeof window.executePanicSosDispatch === 'function') {
+            window.executePanicSosDispatch({
+              source: 'gesture',
+              gestureName: gestureName,
+              distressType: distressType,
+              message: defaultMsgs[gestureName] || 'CAMERA GESTURE SOS'
+            });
+          } else if (typeof GestureCamera._onTrigger === 'function') {
+            GestureCamera._onTrigger(gestureName.toLowerCase());
+          }
+          return;
+        }
+
+        this.gesture.holdAnimFrameRef = requestAnimationFrame(checkProgress);
+      };
+
+      this.gesture.holdAnimFrameRef = requestAnimationFrame(checkProgress);
+    },
+
+    resetGestureHold() {
+      this.gesture.isHolding = false;
+      this.gesture.holdStartTime = null;
+      this.gesture.currentDetectedGesture = null;
+
+      if (this.gesture.holdAnimFrameRef) {
+        cancelAnimationFrame(this.gesture.holdAnimFrameRef);
+        this.gesture.holdAnimFrameRef = null;
+      }
+      if (this.gesture.graceTimeoutId) {
+        clearTimeout(this.gesture.graceTimeoutId);
+        this.gesture.graceTimeoutId = null;
+      }
+
+      const hud = document.getElementById('gestureHoldHud');
+      const progressBar = document.getElementById('gestureHoldProgressBar');
+      const percentText = document.getElementById('gestureHoldPercentText');
+      const circleContainer = document.getElementById('hudHoldCountdownContainer');
+
+      if (hud) {
+        hud.classList.add('hidden');
+        hud.style.display = 'none';
+      }
+      if (circleContainer) circleContainer.classList.add('hidden');
+      if (progressBar) progressBar.style.width = '0%';
+      if (percentText) percentText.textContent = '0%';
+    },
+
+    updateGestureBadge(gestureName) {
+      const badge = document.getElementById('gestureDetectedBadge');
+      if (!badge) return;
+
+      if (!gestureName) {
+        badge.innerHTML = `
+          <span class="w-2 h-2 rounded-full bg-slate-500 animate-pulse"></span>
+          <span>Waiting for Hand Sign...</span>
+        `;
+        badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-black/70 text-slate-300 border border-white/20 backdrop-blur-sm font-bold flex items-center gap-1.5';
+      } else if (gestureName === 'FIST') {
+        badge.innerHTML = `
+          <span class="w-2 h-2 rounded-full bg-red-400 animate-ping"></span>
+          <span class="text-rose-300">✊ CLOSED FIST DETECTED // HOLD 1.2s</span>
+        `;
+        badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-red-950/80 text-rose-200 border border-red-500/50 backdrop-blur-sm font-bold flex items-center gap-1.5';
+      } else if (gestureName === 'POINTING') {
+        badge.innerHTML = `
+          <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+          <span class="text-amber-300">☝️ POINTING INDEX DETECTED // HOLD 1.2s</span>
+        `;
+        badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-amber-950/80 text-amber-200 border border-amber-500/50 backdrop-blur-sm font-bold flex items-center gap-1.5';
+      } else if (gestureName === 'V_SIGN') {
+        badge.innerHTML = `
+          <span class="w-2 h-2 rounded-full bg-blue-400 animate-ping"></span>
+          <span class="text-blue-300">✌️ V-SIGN DETECTED // HOLD 1.2s</span>
+        `;
+        badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-blue-950/80 text-blue-200 border border-blue-500/50 backdrop-blur-sm font-bold flex items-center gap-1.5';
+      } else if (gestureName === 'PALM') {
+        badge.innerHTML = `
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+          <span class="text-emerald-300">✋ OPEN PALM DETECTED // HOLD 1.2s</span>
+        `;
+        badge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-lg bg-emerald-950/80 text-emerald-200 border border-emerald-500/50 backdrop-blur-sm font-bold flex items-center gap-1.5';
+      }
+    },
+
+    updatePillHighlights(gestureName) {
+      const pillPalm = document.getElementById('gesturePillPalm');
+      const pillFist = document.getElementById('gesturePillFist');
+      const pillPoint = document.getElementById('gesturePillPoint');
+      const pillV = document.getElementById('gesturePillV');
+
+      const resetPill = (el) => {
+        if (!el) return;
+        el.className = 'p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100';
+      };
+
+      const highlightPill = (el) => {
+        if (!el) return;
+        el.className = 'p-1.5 rounded-xl border-2 border-emerald-500 bg-emerald-100 text-emerald-950 font-black flex items-center justify-center gap-1 transition shadow-sm scale-105 cursor-pointer';
+      };
+
+      resetPill(pillPalm);
+      resetPill(pillFist);
+      resetPill(pillPoint);
+      resetPill(pillV);
+
+      if (gestureName === 'PALM') highlightPill(pillPalm);
+      else if (gestureName === 'FIST') highlightPill(pillFist);
+      else if (gestureName === 'POINTING') highlightPill(pillPoint);
+      else if (gestureName === 'V_SIGN') highlightPill(pillV);
+    }
   };
 
-  const GESTURE_EMOJIS = {
-    palm: '✋',
-    fist: '✊',
-    pointing: '☝️',
-    v_sign: '✌️',
-    thumbs_up: '👍',
-    hand_sign: '🖐️'
-  };
-
-  const GESTURE_LABELS = {
-    palm: 'OPEN PALM (HOLD 1.5s)',
-    fist: 'CLOSED FIST (HOLD 1.5s)',
-    pointing: 'POINTING (HOLD 1.5s)',
-    v_sign: 'V-SIGN (HOLD 1.5s)',
-    thumbs_up: 'THUMBS UP (HOLD 1.5s)',
-    hand_sign: 'HAND SIGN (HOLD 1.5s)'
-  };
-
-  const REQUIRED_HOLD_MS = 1500;  // 1.5 seconds steady hold
-  const GRACE_PERIOD_MS = 380;   // 380ms grace window to prevent micro-flicker resets
-  const COOLDOWN_MS = 5000;       // 5 seconds cooldown after alert dispatch
-
+  // =========================================================================
+  // 📷 GestureCamera Hardware & Canvas Vision Engine
+  // =========================================================================
   let videoEl = null;
   let canvasOverlay = null;
   let ctxOverlay = null;
@@ -45,25 +270,19 @@
   let stream = null;
   let isRunning = false;
   let isOpening = false;
-  let currentFacingMode = 'user'; // 'user' or 'environment'
+  let currentFacingMode = 'user';
   let animationFrameId = null;
-
-  // Hand Tracking & Hold State
-  let activeGesture = null;
-  let gestureStartTime = 0;
-  let lastDetectedTimestamp = 0;
-  let isTriggerCooldown = false;
-  let onSosTriggerCallback = null;
   let isUiBound = false;
-  let simIntervalId = null;
 
   const GestureCamera = {
+    _onTrigger: null,
+
     init(options = {}) {
       if (options.onTrigger) {
-        onSosTriggerCallback = options.onTrigger;
+        this._onTrigger = options.onTrigger;
       }
       this.bindUi();
-      console.log('📷 SilentBridge Hand Sign SOS Engine Initialized.');
+      console.log('📷 SilentBridge GestureCamera Engine Wired to SafetyPipeline.');
     },
 
     bindUi() {
@@ -75,13 +294,11 @@
         ctxOverlay = canvasOverlay.getContext('2d');
       }
 
-      // Fast offscreen canvas for high-performance pixel-level computer vision
       offscreenCanvas = document.createElement('canvas');
       offscreenCanvas.width = 160;
       offscreenCanvas.height = 120;
       offscreenCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
 
-      // Setup UI Listeners
       const btnToggle = document.getElementById('btnToggleGestureCamera');
       if (btnToggle && !btnToggle._hasGestureCameraListener) {
         btnToggle._hasGestureCameraListener = true;
@@ -111,9 +328,7 @@
       const btnToggle = document.getElementById('btnToggleGestureCamera');
       const wrapper = document.getElementById('gestureVideoWrapper');
       const hudStatus = document.getElementById('hudStatusBadge');
-      const hudGesture = document.getElementById('hudDetectedGesture');
 
-      // 1. Immediately provide visual feedback to user
       if (btnToggle) {
         btnToggle.innerHTML = `<span>⏳</span> Opening Camera...`;
         btnToggle.classList.replace('bg-purple-600', 'bg-amber-600');
@@ -126,11 +341,8 @@
       if (hudStatus) {
         hudStatus.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span> REQUESTING CAMERA...`;
       }
-      if (hudGesture) {
-        hudGesture.innerText = 'STARTING SENSOR...';
-      }
+      SafetyPipeline.updateGestureBadge(null);
 
-      // 2. Camera API Availability Check
       const hasMediaDevices = Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
       const legacyGetUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
 
@@ -159,7 +371,7 @@
         let streamAcquired = null;
         let lastErr = null;
 
-        // Tier 1: Try with ideal facingMode and ideal resolution
+        // Tier 1: Ideal facingMode and dimensions
         try {
           streamAcquired = await requestStream({
             video: {
@@ -171,10 +383,10 @@
           });
         } catch (e1) {
           lastErr = e1;
-          console.warn('Camera Tier 1 constraint failed, trying Tier 2:', e1);
+          console.warn('Tier 1 constraints failed, trying Tier 2:', e1);
         }
 
-        // Tier 2: Try basic video constraints
+        // Tier 2: Basic dimensions
         if (!streamAcquired) {
           try {
             streamAcquired = await requestStream({
@@ -183,11 +395,11 @@
             });
           } catch (e2) {
             lastErr = e2;
-            console.warn('Camera Tier 2 constraint failed, trying Tier 3:', e2);
+            console.warn('Tier 2 constraints failed, trying Tier 3:', e2);
           }
         }
 
-        // Tier 3: Bare minimum video constraint
+        // Tier 3: Bare video constraint
         if (!streamAcquired) {
           try {
             streamAcquired = await requestStream({ video: true, audio: false });
@@ -211,7 +423,6 @@
           videoEl.setAttribute('autoplay', '');
           videoEl.srcObject = stream;
 
-          // Ensure video playback starts reliably
           await new Promise((resolve) => {
             let done = false;
             const complete = () => {
@@ -225,7 +436,7 @@
             };
             videoEl.onplaying = complete;
             videoEl.play().then(complete).catch(() => {});
-            setTimeout(complete, 1200); // Safety fallback timeout
+            setTimeout(complete, 1200);
           });
         }
 
@@ -236,7 +447,6 @@
         const btnFlip = document.getElementById('btnFlipCamera');
         if (btnFlip) btnFlip.classList.remove('hidden');
 
-        // Start real-time frame processing
         this.processFrame();
 
       } catch (err) {
@@ -248,7 +458,7 @@
         } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
           errorMsg = 'No camera hardware found on this system.';
         } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-          errorMsg = 'Camera is currently in use by another application or tab (e.g. Zoom, Teams, Google Meet). Please close other camera apps and try again.';
+          errorMsg = 'Camera is currently in use by another application or tab (e.g. Zoom, Teams, Meet). Please close other camera apps and try again.';
         } else if (err.name === 'OverconstrainedError') {
           errorMsg = 'Camera requested settings could not be satisfied. Please check your camera permissions.';
         } else if (err.message) {
@@ -262,10 +472,9 @@
     stop() {
       isRunning = false;
       isOpening = false;
-      if (simIntervalId) {
-        clearInterval(simIntervalId);
-        simIntervalId = null;
-      }
+      SafetyPipeline.cleanupAllTimers();
+      SafetyPipeline.resetGestureHold();
+
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
@@ -283,7 +492,6 @@
         ctxOverlay.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
       }
 
-      this.resetHoldState();
       this.resetUiToStopped();
 
       const btnFlip = document.getElementById('btnFlipCamera');
@@ -314,7 +522,6 @@
       const btnToggle = document.getElementById('btnToggleGestureCamera');
       const wrapper = document.getElementById('gestureVideoWrapper');
       const hudStatus = document.getElementById('hudStatusBadge');
-      const hudGesture = document.getElementById('hudDetectedGesture');
 
       if (btnToggle) {
         if (active) {
@@ -342,8 +549,8 @@
           : `OFFLINE`;
       }
 
-      if (hudGesture && !active) {
-        hudGesture.innerText = 'SHOW HAND SIGN (✋/✊/☝️/✌️)';
+      if (!active) {
+        SafetyPipeline.updateGestureBadge(null);
       }
     },
 
@@ -356,16 +563,12 @@
           canvasOverlay.height = videoEl.videoHeight || 480;
         }
 
-        // Run Pure-JS Canvas Computer Vision Hand Analyzer
         this.detectHandFromCanvas();
       }
 
       animationFrameId = requestAnimationFrame(() => this.processFrame());
     },
 
-    // =========================================================================
-    // 🧠 Pure-JS High-Precision Canvas Hand Sign Recognition Engine
-    // =========================================================================
     detectHandFromCanvas() {
       if (!videoEl || !offscreenCtx) return;
 
@@ -380,8 +583,6 @@
       let sumY = 0;
       let minX = sw, maxX = 0, minY = sh, maxY = 0;
 
-      // 1. Dual-Space Illumination-Invariant Skin Tone Filter
-      // (Normalized RGB Chromaticity + YCrCb + RGB Contrast)
       for (let i = 0; i < pixels.length; i += 4) {
         const r = pixels[i];
         const g = pixels[i + 1];
@@ -415,12 +616,11 @@
         }
       }
 
-      // Check if minimum skin area is present (between 1.5% and 55% of frame)
       const minPixels = sw * sh * 0.015;
       const maxPixels = sw * sh * 0.55;
 
       if (skinCount < minPixels || skinCount > maxPixels) {
-        this.handleGestureDetection(null, null);
+        SafetyPipeline.onGestureDetected(null);
         if (ctxOverlay && canvasOverlay) {
           ctxOverlay.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
         }
@@ -432,7 +632,6 @@
       const boxW = Math.max(1, maxX - minX);
       const boxH = Math.max(1, maxY - minY);
 
-      // 2. Scan Vertical Columns to Extract Upper Hand Silhouette
       const colStep = 2;
       const topProfile = [];
 
@@ -464,7 +663,6 @@
         topProfile.push({ x, y: highestSkinY });
       }
 
-      // Smooth silhouette with 3-point moving average
       const smoothedProfile = [];
       for (let i = 0; i < topProfile.length; i++) {
         const prev = topProfile[Math.max(0, i - 1)].y;
@@ -473,7 +671,6 @@
         smoothedProfile.push({ x: topProfile[i].x, y: (prev + cur * 2 + next) / 4 });
       }
 
-      // 3. Detect Protruding Finger Peaks
       const peaks = [];
       const topThreshold = cy - boxH * 0.12;
 
@@ -482,77 +679,49 @@
         const prev = smoothedProfile[i - 1];
         const next = smoothedProfile[i + 1];
 
-        // Local crest pointing upwards (cur.y is smaller than surrounding)
         if (cur.y < topThreshold && cur.y <= prev.y && cur.y <= next.y) {
           const prominence = cy - cur.y;
           if (prominence > boxH * 0.18) {
-            const isFarFromOtherPeaks = peaks.every(p => Math.abs(p.x - cur.x) > boxW * 0.11);
-            if (isFarFromOtherPeaks) {
-              peaks.push(cur);
-            }
+            const isFar = peaks.every(p => Math.abs(p.x - cur.x) > boxW * 0.11);
+            if (isFar) peaks.push(cur);
           }
         }
       }
 
-      // 4. Classify ANY Hand Sign
       let detected = null;
       const numPeaks = peaks.length;
       const aspectRatio = boxW / boxH;
 
-      if (numPeaks >= 4) {
-        // 4 or 5 extended fingers -> Open Palm / Stop Sign
-        detected = GESTURE_TYPES.PALM;
-      } else if (numPeaks === 3) {
-        // 3 extended fingers -> Palm or Tri-Sign
-        detected = GESTURE_TYPES.PALM;
+      if (numPeaks >= 3) {
+        detected = 'PALM';
       } else if (numPeaks === 2) {
-        // 2 extended fingers -> V-Sign / Peace Sign
-        detected = GESTURE_TYPES.V_SIGN;
+        detected = 'V_SIGN';
       } else if (numPeaks === 1) {
-        // 1 extended finger -> Pointing or Thumbs Up
-        const peak = peaks[0];
-        const isNearEdge = (peak.x - minX < boxW * 0.25) || (maxX - peak.x < boxW * 0.25);
-        if (isNearEdge && aspectRatio > 0.8) {
-          detected = GESTURE_TYPES.THUMBS_UP;
-        } else {
-          detected = GESTURE_TYPES.POINTING;
-        }
+        detected = 'POINTING';
       } else if (numPeaks === 0) {
-        // No protruding fingers -> Fist (compact blob)
         if (aspectRatio >= 0.55 && aspectRatio <= 1.5) {
-          detected = GESTURE_TYPES.FIST;
+          detected = 'FIST';
         } else {
-          // General Hand Sign
-          detected = GESTURE_TYPES.HAND_SIGN;
+          detected = 'PALM';
         }
-      } else {
-        detected = GESTURE_TYPES.HAND_SIGN;
       }
 
-      // 5. Draw HUD Bounding Box, Skeleton & Finger Markers on Canvas
+      // Draw overlay
       if (ctxOverlay && canvasOverlay) {
         ctxOverlay.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
         const scaleX = canvasOverlay.width / sw;
         const scaleY = canvasOverlay.height / sh;
 
-        const bx = minX * scaleX;
-        const by = minY * scaleY;
-        const bw = boxW * scaleX;
-        const bh = boxH * scaleY;
-
-        // Draw Bounding Box
         ctxOverlay.save();
         ctxOverlay.strokeStyle = detected ? '#10b981' : '#a855f7';
         ctxOverlay.lineWidth = 3;
-        ctxOverlay.strokeRect(bx, by, bw, bh);
+        ctxOverlay.strokeRect(minX * scaleX, minY * scaleY, boxW * scaleX, boxH * scaleY);
 
-        // Draw Centroid / Palm Core
         ctxOverlay.fillStyle = '#ec4899';
         ctxOverlay.beginPath();
         ctxOverlay.arc(cx * scaleX, cy * scaleY, 7, 0, 2 * Math.PI);
         ctxOverlay.fill();
 
-        // Draw Skeleton Lines and Finger Tips
         peaks.forEach(p => {
           ctxOverlay.strokeStyle = '#10b981';
           ctxOverlay.lineWidth = 2.5;
@@ -563,104 +732,18 @@
 
           ctxOverlay.fillStyle = '#10b981';
           ctxOverlay.beginPath();
-          ctxOverlay.arc(p.x * scaleX, p.y * scaleY, 8, 0, 2 * Math.PI);
-          ctxOverlay.fill();
-
-          ctxOverlay.fillStyle = '#ffffff';
-          ctxOverlay.beginPath();
-          ctxOverlay.arc(p.x * scaleX, p.y * scaleY, 3, 0, 2 * Math.PI);
+          ctxOverlay.arc(p.x * scaleX, p.y * scaleY, 7, 0, 2 * Math.PI);
           ctxOverlay.fill();
         });
-
-        // Draw Label Tag above Bounding Box
-        if (detected) {
-          const labelText = `${GESTURE_EMOJIS[detected] || '🖐️'} ${detected.toUpperCase()}`;
-          ctxOverlay.font = 'bold 14px monospace';
-          const textW = ctxOverlay.measureText(labelText).width;
-          const tagX = Math.max(10, bx + (bw - textW) / 2);
-          const tagY = Math.max(24, by - 10);
-
-          ctxOverlay.fillStyle = 'rgba(16, 185, 129, 0.9)';
-          ctxOverlay.fillRect(tagX - 8, tagY - 18, textW + 16, 24);
-
-          ctxOverlay.fillStyle = '#ffffff';
-          ctxOverlay.fillText(labelText, tagX, tagY - 1);
-        }
         ctxOverlay.restore();
       }
 
-      this.handleGestureDetection(detected, { cx, cy, boxW, boxH, peaks });
+      SafetyPipeline.onGestureDetected(detected);
     },
 
-    // =========================================================================
-    // ⏱️ 1.5-Second Continuous Steady Hold State Machine
-    // =========================================================================
-    handleGestureDetection(detected, handData) {
-      const now = performance.now();
-      const hudGesture = document.getElementById('hudDetectedGesture');
-      const holdContainer = document.getElementById('hudHoldCountdownContainer');
-      const svgRing = document.getElementById('hudHoldSvgRing');
-      const holdSeconds = document.getElementById('hudHoldSecondsText');
-      const holdEmoji = document.getElementById('hudHoldEmoji');
-      const holdLabel = document.getElementById('hudHoldLabel');
-
-      this.updatePillHighlights(detected);
-
-      if (isTriggerCooldown) {
-        if (hudGesture) hudGesture.innerText = 'COOLDOWN // DISPATCHED';
-        if (holdContainer) holdContainer.classList.add('hidden');
-        return;
-      }
-
-      if (detected) {
-        lastDetectedTimestamp = now;
-        const emoji = GESTURE_EMOJIS[detected] || '🖐️';
-
-        if (hudGesture) {
-          hudGesture.innerText = `${emoji} ${detected.toUpperCase()}`;
-        }
-
-        // Check if user is holding any valid hand sign
-        if (activeGesture) {
-          const elapsed = now - gestureStartTime;
-          const progress = Math.min(1.0, elapsed / REQUIRED_HOLD_MS);
-          const remainingSec = Math.max(0, (REQUIRED_HOLD_MS - elapsed) / 1000).toFixed(1);
-
-          if (holdContainer) holdContainer.classList.remove('hidden');
-          if (holdEmoji) holdEmoji.innerText = emoji;
-          if (holdSeconds) holdSeconds.innerText = `${remainingSec}s`;
-          if (holdLabel) holdLabel.innerText = `HOLD ${detected.toUpperCase()} (1.5s TO SEND SOS)`;
-
-          if (svgRing) {
-            const circumference = 188.5; // 2 * PI * r (30)
-            const offset = circumference * (1 - progress);
-            svgRing.style.strokeDashoffset = offset;
-            svgRing.style.stroke = progress > 0.75 ? '#10b981' : '#a855f7';
-          }
-
-          if (elapsed >= REQUIRED_HOLD_MS) {
-            // 🎯 TRIGGER CRITICAL EMERGENCY SOS TRANSMISSION
-            this.triggerEmergencySos(detected);
-          }
-        } else {
-          // Started holding a hand sign
-          activeGesture = detected;
-          gestureStartTime = now;
-          if (holdContainer) holdContainer.classList.remove('hidden');
-          if (svgRing) svgRing.style.strokeDashoffset = '188.5';
-        }
-      } else {
-        // Grace period (380ms) to withstand momentary camera blur or frame drop
-        if (activeGesture && (now - lastDetectedTimestamp > GRACE_PERIOD_MS)) {
-          this.resetHoldState();
-          if (hudGesture) hudGesture.innerText = 'SHOW HAND SIGN (✋/✊/☝️/✌️)';
-        }
-      }
-    },
-
-    // Instant Simulation / Interactive One-Tap Test
-    simulateGesture(gesture) {
-      if (isTriggerCooldown) return;
+    simulateGesture(gestureName) {
+      const u = String(gestureName).toUpperCase();
+      console.log(`🧪 Simulating SafetyPipeline hold for: ${u}`);
 
       const wrapper = document.getElementById('gestureVideoWrapper');
       if (wrapper && wrapper.classList.contains('hidden')) {
@@ -668,101 +751,9 @@
         wrapper.style.display = 'flex';
       }
 
-      if (simIntervalId) {
-        clearInterval(simIntervalId);
-        simIntervalId = null;
-      }
-
-      console.log(`🧪 Interactive test for hand sign: ${gesture}`);
-      let simStart = performance.now();
-      this.resetHoldState();
-
-      simIntervalId = setInterval(() => {
-        const now = performance.now();
-        const elapsed = now - simStart;
-        this.handleGestureDetection(gesture, null);
-
-        if (elapsed >= REQUIRED_HOLD_MS + 200 || isTriggerCooldown) {
-          clearInterval(simIntervalId);
-          simIntervalId = null;
-        }
-      }, 50);
+      SafetyPipeline.onGestureDetected(u);
     },
 
-    resetHoldState() {
-      activeGesture = null;
-      gestureStartTime = 0;
-      const holdContainer = document.getElementById('hudHoldCountdownContainer');
-      const svgRing = document.getElementById('hudHoldSvgRing');
-      if (holdContainer) holdContainer.classList.add('hidden');
-      if (svgRing) svgRing.style.strokeDashoffset = '188.5';
-      this.updatePillHighlights(null);
-    },
-
-    updatePillHighlights(detected) {
-      const pillPalm = document.getElementById('gesturePillPalm');
-      const pillFist = document.getElementById('gesturePillFist');
-      const pillPoint = document.getElementById('gesturePillPoint');
-      const pillV = document.getElementById('gesturePillV');
-
-      const resetPill = (el) => {
-        if (!el) return;
-        el.className = 'p-1.5 rounded-xl border border-purple-200 bg-white text-purple-950 flex items-center justify-center gap-1 transition cursor-pointer hover:bg-purple-100';
-      };
-
-      const highlightPill = (el) => {
-        if (!el) return;
-        el.className = 'p-1.5 rounded-xl border-2 border-emerald-500 bg-emerald-100 text-emerald-950 font-black flex items-center justify-center gap-1 transition shadow-sm scale-105 cursor-pointer';
-      };
-
-      resetPill(pillPalm);
-      resetPill(pillFist);
-      resetPill(pillPoint);
-      resetPill(pillV);
-
-      if (detected === GESTURE_TYPES.PALM) highlightPill(pillPalm);
-      else if (detected === GESTURE_TYPES.FIST) highlightPill(pillFist);
-      else if (detected === GESTURE_TYPES.POINTING || detected === GESTURE_TYPES.THUMBS_UP) highlightPill(pillPoint);
-      else if (detected === GESTURE_TYPES.V_SIGN) highlightPill(pillV);
-      else if (detected === GESTURE_TYPES.HAND_SIGN) {
-        highlightPill(pillPalm);
-      }
-    },
-
-    // =========================================================================
-    // 🚨 Emergency Alert Trigger
-    // =========================================================================
-    triggerEmergencySos(gesture) {
-      isTriggerCooldown = true;
-      this.resetHoldState();
-
-      console.log(`🚨 HAND SIGN EMERGENCY SOS TRIGGERED: [${gesture.toUpperCase()}] held for 1.5s!`);
-
-      // 1. Success Visual Flash
-      const flash = document.getElementById('hudSuccessFlash');
-      if (flash) {
-        flash.classList.remove('hidden');
-        setTimeout(() => flash.classList.add('hidden'), 3200);
-      }
-
-      // 2. Play acoustic confirmation chime
-      if (window.modem && typeof window.modem.playAlarmChime === 'function') {
-        try { window.modem.playAlarmChime(); } catch (e) {}
-      }
-
-      // 3. Dispatch SOS to application (publishes MQTT & acoustic broadcast to Rescuer)
-      if (typeof onSosTriggerCallback === 'function') {
-        onSosTriggerCallback(gesture);
-      }
-
-      // 4. Cooldown timer to prevent accidental double-triggers
-      setTimeout(() => {
-        isTriggerCooldown = false;
-        console.log('Gesture camera trigger cooldown expired. Ready for next hand sign.');
-      }, COOLDOWN_MS);
-    },
-
-    // Apply Green Theme when ACK arrives from Rescuer
     applyConfirmedTheme(isConfirmed) {
       const container = document.getElementById('gestureCameraContainer');
       const title = document.getElementById('lblGestureTitle');
@@ -789,7 +780,7 @@
         if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse';
         if (badge) {
           badge.className = 'text-[9px] bg-purple-200 text-purple-900 border border-purple-400 px-2 py-0.5 rounded-full font-black font-mono uppercase tracking-wider';
-          badge.innerText = 'HOLD 1.5s TRIGGER';
+          badge.innerText = 'HOLD 1.2s TRIGGER';
         }
         if (txt) txt.className = 'text-[10px] text-slate-500 mt-2 font-medium';
         if (btnToggle && !isRunning) {
@@ -799,12 +790,12 @@
     }
   };
 
-  // Auto-bind UI as soon as DOM is ready so clicks work immediately
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => GestureCamera.bindUi());
   } else {
     GestureCamera.bindUi();
   }
 
+  window.SafetyPipeline = SafetyPipeline;
   window.GestureCamera = GestureCamera;
 })(window);
